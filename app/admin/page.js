@@ -1,0 +1,1259 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableHead,
+  TableRow,
+  TableCell,
+} from '@/components/ui/table';
+import { 
+  ShieldAlert, 
+  Users, 
+  CreditCard, 
+  Check, 
+  X, 
+  UserPlus, 
+  PlusCircle, 
+  LogOut, 
+  Edit3, 
+  Eye,
+  AlertTriangle,
+  FolderOpen
+} from 'lucide-react';
+import { ThemeToggle } from '@/components/theme-toggle';
+
+export default function AdminPage() {
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState('payments'); // 'payments' | 'users' | 'accounts'
+  const [loading, setLoading] = useState(true);
+  const [adminUser, setAdminUser] = useState(null);
+  
+  // Data lists
+  const [payments, setPayments] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [accounts, setAccounts] = useState([]);
+
+  // Forms states
+  // User creation form
+  const [username, setUsername] = useState('');
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [role, setRole] = useState('USER');
+  const [assignedAccountId, setAssignedAccountId] = useState('');
+  const [userFormError, setUserFormError] = useState('');
+  const [userFormSuccess, setUserFormSuccess] = useState('');
+  const [userSubmitting, setUserSubmitting] = useState(false);
+
+  // User editing form states
+  const [editingUser, setEditingUser] = useState(null);
+  const [editUsername, setEditUsername] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editPassword, setEditPassword] = useState('');
+  const [editName, setEditName] = useState('');
+  const [editRole, setEditRole] = useState('USER');
+  const [editAssignedAccountId, setEditAssignedAccountId] = useState('');
+  const [editFormError, setEditFormError] = useState('');
+  const [editFormSuccess, setEditFormSuccess] = useState('');
+  const [editSubmitting, setEditSubmitting] = useState(false);
+
+  // Bank account creation form
+  const [bankName, setBankName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [accountName, setAccountName] = useState('');
+  const [qrType, setQrType] = useState('PROMPTPAY');
+  const [accountFormError, setAccountFormError] = useState('');
+  const [accountFormSuccess, setAccountFormSuccess] = useState('');
+  const [accountSubmitting, setAccountSubmitting] = useState(false);
+
+  // Bank account editing form states
+  const [editingAccount, setEditingAccount] = useState(null);
+  const [editBankName, setEditBankName] = useState('');
+  const [editAccountNumber, setEditAccountNumber] = useState('');
+  const [editAccountName, setEditAccountName] = useState('');
+  const [editQrType, setEditQrType] = useState('PROMPTPAY');
+  const [editAccountFormError, setEditAccountFormError] = useState('');
+  const [editAccountFormSuccess, setEditAccountFormSuccess] = useState('');
+  const [editAccountSubmitting, setEditAccountSubmitting] = useState(false);
+
+  // Slip Rejection modal state
+  const [selectedPayment, setSelectedPayment] = useState(null);
+  const [rejectedReason, setRejectedReason] = useState('');
+  const [statusSubmitting, setStatusSubmitting] = useState(false);
+  const [slipModalOpen, setSlipModalOpen] = useState(false);
+  const [viewingSlipUrl, setViewingSlipUrl] = useState('');
+
+  // Fetch initial profile
+  const fetchProfile = async () => {
+    try {
+      const res = await fetch('/api/auth/me');
+      if (!res.ok) {
+        router.push('/login');
+        return;
+      }
+      const data = await res.json();
+      if (data.user.role !== 'ADMIN') {
+        router.push('/payment');
+        return;
+      }
+      setAdminUser(data.user);
+    } catch (err) {
+      console.error(err);
+      router.push('/login');
+    }
+  };
+
+  // Fetch lists
+  const fetchPayments = async () => {
+    try {
+      const res = await fetch('/api/admin/payments');
+      if (res.ok) {
+        const data = await res.json();
+        setPayments(data.payments);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const fetchUsers = async () => {
+    try {
+      const res = await fetch('/api/admin/users');
+      if (res.ok) {
+        const data = await res.json();
+        setUsers(data.users);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const fetchAccounts = async () => {
+    try {
+      const res = await fetch('/api/admin/accounts');
+      if (res.ok) {
+        const data = await res.json();
+        setAccounts(data.accounts);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    const init = async () => {
+      setLoading(true);
+      await fetchProfile();
+      await fetchPayments();
+      await fetchUsers();
+      await fetchAccounts();
+      setLoading(false);
+    };
+    init();
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      router.push('/login');
+      router.refresh();
+    } catch (err) {
+      console.error('Logout error:', err);
+    }
+  };
+
+  // Create user
+  const handleCreateUser = async (e) => {
+    e.preventDefault();
+    setUserFormError('');
+    setUserFormSuccess('');
+    setUserSubmitting(true);
+
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username,
+          phone: role === 'USER' ? phone : null,
+          password,
+          name,
+          role,
+          assignedAccountId: assignedAccountId ? parseInt(assignedAccountId, 10) : null
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'สร้างผู้ใช้ใหม่ไม่สำเร็จ');
+      }
+
+      setUserFormSuccess(`สร้างผู้ใช้ "${name}" สำเร็จแล้ว!`);
+      setUsername('');
+      setPhone('');
+      setPassword('');
+      setName('');
+      setRole('USER');
+      setAssignedAccountId('');
+      
+      // Refresh list
+      fetchUsers();
+    } catch (err) {
+      setUserFormError(err.message);
+    } finally {
+      setUserSubmitting(false);
+    }
+  };
+
+  const startEditingUser = (u) => {
+    setEditingUser(u);
+    setEditUsername(u.username);
+    setEditPhone(u.phone || '');
+    setEditPassword('');
+    setEditName(u.name);
+    setEditRole(u.role);
+    setEditAssignedAccountId(u.assignedAccountId ? String(u.assignedAccountId) : '');
+    setEditFormError('');
+    setEditFormSuccess('');
+  };
+
+  const handleEditUserSubmit = async (e) => {
+    e.preventDefault();
+    setEditFormError('');
+    setEditFormSuccess('');
+    setEditSubmitting(true);
+
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editingUser.id,
+          username: editUsername,
+          phone: editRole === 'USER' ? editPhone : null,
+          password: editPassword,
+          name: editName,
+          role: editRole,
+          assignedAccountId: editRole === 'USER' && editAssignedAccountId ? parseInt(editAssignedAccountId, 10) : null
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'แก้ไขข้อมูลผู้ใช้ไม่สำเร็จ');
+      }
+
+      setEditFormSuccess('แก้ไขข้อมูลผู้ใช้สำเร็จแล้ว!');
+      fetchUsers();
+      fetchPayments();
+      
+      setTimeout(() => {
+        setEditingUser(null);
+        setEditFormSuccess('');
+      }, 1000);
+    } catch (err) {
+      setEditFormError(err.message);
+    } finally {
+      setEditSubmitting(false);
+    }
+  };
+
+  // Create bank account
+  const handleCreateAccount = async (e) => {
+    e.preventDefault();
+    setAccountFormError('');
+    setAccountFormSuccess('');
+    setAccountSubmitting(true);
+
+    try {
+      const res = await fetch('/api/admin/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bankName,
+          accountNumber,
+          accountName,
+          qrType
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'สร้างบัญชีไม่สำเร็จ');
+      }
+
+      setAccountFormSuccess(`เพิ่มบัญชี "${bankName} (${accountName})" สำเร็จแล้ว!`);
+      setBankName('');
+      setAccountNumber('');
+      setAccountName('');
+      setQrType('PROMPTPAY');
+      
+      fetchAccounts();
+    } catch (err) {
+      setAccountFormError(err.message);
+    } finally {
+      setAccountSubmitting(false);
+    }
+  };
+
+  const startEditingAccount = (acc) => {
+    setEditingAccount(acc);
+    setEditBankName(acc.bankName);
+    setEditAccountNumber(acc.accountNumber);
+    setEditAccountName(acc.accountName);
+    setEditQrType(acc.qrType || 'PROMPTPAY');
+    setEditAccountFormError('');
+    setEditAccountFormSuccess('');
+  };
+
+  const handleEditAccountSubmit = async (e) => {
+    e.preventDefault();
+    setEditAccountFormError('');
+    setEditAccountFormSuccess('');
+    setEditAccountSubmitting(true);
+
+    try {
+      const res = await fetch('/api/admin/accounts', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editingAccount.id,
+          bankName: editBankName,
+          accountNumber: editAccountNumber,
+          accountName: editAccountName,
+          qrType: editQrType
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'แก้ไขข้อมูลบัญชีธนาคารไม่สำเร็จ');
+      }
+
+      setEditAccountFormSuccess('แก้ไขข้อมูลบัญชีธนาคารสำเร็จแล้ว!');
+      fetchAccounts();
+      fetchUsers();
+      
+      setTimeout(() => {
+        setEditingAccount(null);
+        setEditAccountFormSuccess('');
+      }, 1000);
+    } catch (err) {
+      setEditAccountFormError(err.message);
+    } finally {
+      setEditAccountSubmitting(false);
+    }
+  };
+
+  // Approve payment
+  const handleApprovePayment = async (id) => {
+    if (!confirm('คุณต้องการอนุมัติการชำระเงินนี้ใช่หรือไม่?')) return;
+    setStatusSubmitting(true);
+
+    try {
+      const res = await fetch('/api/admin/payments', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, status: 'APPROVED' })
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'การดำเนินการล้มเหลว');
+      }
+
+      fetchPayments();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setStatusSubmitting(false);
+    }
+  };
+
+  // Reject payment action from modal
+  const handleRejectPaymentSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedPayment) return;
+    setStatusSubmitting(true);
+
+    try {
+      const res = await fetch('/api/admin/payments', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: selectedPayment.id,
+          status: 'REJECTED',
+          rejectedReason
+        })
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'การดำเนินการล้มเหลว');
+      }
+
+      setSelectedPayment(null);
+      setRejectedReason('');
+      fetchPayments();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setStatusSubmitting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <h2 className="text-2xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent animate-pulse">
+          กำลังโหลดข้อมูลแผงควบคุมผู้ดูแลระบบ...
+        </h2>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col min-h-screen">
+      {/* Top Navigation Bar */}
+      <header className="border-b bg-card/90 backdrop-blur-md sticky top-0 z-50">
+        {/* Brand accent top line */}
+        <div className="h-[2px] w-full bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500" />
+        <div className="flex justify-between items-center px-6 py-3 max-w-7xl mx-auto w-full">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <ShieldAlert className="h-4 w-4" />
+            </div>
+            <span className="font-bold text-lg tracking-tight">StockVision</span>
+            <span className="hidden sm:inline-flex ml-1 items-center rounded-md border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">ADMIN</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="hidden sm:flex flex-col items-end">
+              <span className="font-semibold text-sm leading-none">{adminUser?.name}</span>
+              <span className="text-xs text-muted-foreground mt-0.5">ผู้ดูแลระบบ</span>
+            </div>
+            <div className="h-7 w-px bg-border hidden sm:block" />
+            <ThemeToggle />
+            <div className="h-7 w-px bg-border" />
+            <Button variant="ghost" size="sm" onClick={handleLogout} className="gap-2 text-muted-foreground hover:text-foreground">
+              <LogOut className="h-4 w-4" />
+              <span className="hidden sm:inline">ออกจากระบบ</span>
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      {/* Page Header Area */}
+      <div className="border-b bg-card/30">
+        <div className="px-6 py-6 max-w-7xl mx-auto w-full">
+          <h1 className="text-xl font-semibold tracking-tight">Admin Dashboard</h1>
+          <p className="text-muted-foreground mt-1 text-sm">จัดการระบบผู้ใช้งาน บัญชีธนาคาร และตรวจสอบสลิปการโอนเงิน</p>
+        </div>
+      </div>
+
+      {/* Admin Content Area */}
+      <main className="flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-8">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <TabsList className="bg-muted/50 p-1 border rounded-lg inline-flex max-w-fit w-full sm:w-auto h-auto">
+              <TabsTrigger value="payments" className="rounded-md px-4 py-2 text-sm font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
+              รายการตรวจสลิป ({payments.filter(p => p.status === 'PENDING').length})
+            </TabsTrigger>
+            <TabsTrigger value="users" className="rounded-md px-4 py-2 text-sm font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
+              จัดการผู้ใช้งาน
+            </TabsTrigger>
+            <TabsTrigger value="accounts" className="rounded-md px-4 py-2 text-sm font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
+              จัดการบัญชีธนาคาร
+            </TabsTrigger>
+          </TabsList>
+          </div>
+
+          {/* Tab 1: Payments Slip Verification */}
+          <TabsContent value="payments">
+            <Card className="shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-xl flex items-center gap-2">
+                  <FolderOpen className="h-5 w-5 text-primary" />
+                  รายการตรวจสอบสลิปชำระเงิน
+                </CardTitle>
+                <CardDescription>
+                  ตรวจสอบความถูกต้องของสลิปชำระเงินและอนุมัติการแจ้งโอน
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {payments.length === 0 ? (
+                  <div className="text-center py-16 border border-dashed border-border rounded-xl bg-secondary/5 text-muted-foreground">
+                    ไม่มีรายการแจ้งชำระเงินในขณะนี้
+                  </div>
+                ) : (
+                  <div className="border rounded-md overflow-hidden">
+                    <Table>
+                      <TableHeader className="bg-muted/50">
+                        <TableRow>
+                          <TableHead className="font-bold text-xs">วัน-เวลา</TableHead>
+                          <TableHead className="font-bold text-xs">ผู้ใช้งาน</TableHead>
+                          <TableHead className="font-bold text-xs">บัญชีรับเงิน</TableHead>
+                          <TableHead className="font-bold text-xs">จำนวนเงิน</TableHead>
+                          <TableHead className="font-bold text-xs">สลิปหลักฐาน</TableHead>
+                          <TableHead className="font-bold text-xs">สถานะ</TableHead>
+                          <TableHead className="font-bold text-xs text-right">การจัดการ</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {payments.map((p) => (
+                          <TableRow key={p.id} className="hover:bg-muted/10">
+                            <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                              {new Date(p.createdAt).toLocaleString('th-TH', {
+                                dateStyle: 'medium',
+                                timeStyle: 'short'
+                              })}
+                            </TableCell>
+                            <TableCell>
+                              <div className="font-bold text-sm">{p.user.name}</div>
+                              <div className="text-[10px] text-muted-foreground">@{p.user.username}</div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="text-xs font-semibold">{p.bankAccount.bankName}</div>
+                              <div className="text-[10px] text-muted-foreground font-mono">{p.bankAccount.accountNumber}</div>
+                            </TableCell>
+                            <TableCell className="font-bold text-sm text-foreground">
+                              {p.amount.toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-xs h-8"
+                                onClick={() => {
+                                  setViewingSlipUrl(p.slipUrl);
+                                  setSlipModalOpen(true);
+                                }}
+                              >
+                                <Eye className="h-3.5 w-3.5 mr-1" />
+                                ดูรูปสลิป
+                              </Button>
+                            </TableCell>
+                            <TableCell>
+                              {p.status === 'PENDING' && (
+                                <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20 text-[10px]">
+                                  รอดำเนินการ
+                                </Badge>
+                              )}
+                              {p.status === 'APPROVED' && (
+                                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[10px]">
+                                  อนุมัติสำเร็จ
+                                </Badge>
+                              )}
+                              {p.status === 'REJECTED' && (
+                                <div className="flex flex-col items-start gap-0.5">
+                                  <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20 text-[10px]">
+                                    ปฏิเสธ
+                                  </Badge>
+                                  {p.rejectedReason && (
+                                    <span className="text-[9px] text-destructive truncate max-w-[100px]" title={p.rejectedReason}>
+                                      {p.rejectedReason}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {p.status === 'PENDING' && (
+                                <div className="flex gap-1.5 justify-end">
+                                  <Button 
+                                    size="sm" 
+                                    className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-xs h-8 px-2.5"
+                                    onClick={() => handleApprovePayment(p.id)}
+                                    disabled={statusSubmitting}
+                                  >
+                                    <Check className="h-3.5 w-3.5 mr-1" />
+                                    อนุมัติ
+                                  </Button>
+                                  <Button 
+                                    size="sm" 
+                                    variant="destructive"
+                                    className="font-semibold text-xs h-8 px-2.5"
+                                    onClick={() => setSelectedPayment(p)}
+                                    disabled={statusSubmitting}
+                                  >
+                                    <X className="h-3.5 w-3.5 mr-1" />
+                                    ปฏิเสธ
+                                  </Button>
+                                </div>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Tab 2: User Management */}
+          <TabsContent value="users">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+              
+              {/* Create User Form */}
+              <Card className="lg:col-span-5 shadow-sm">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <UserPlus className="h-5 w-5 text-primary" />
+                    สร้างผู้ใช้งานใหม่
+                  </CardTitle>
+                  <CardDescription>
+                    กรอกข้อมูลบัญชีเพื่อเปิดสิทธิ์และมอบหมายช่องทางจ่ายเงิน
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {userFormError && (
+                    <div className="bg-destructive/10 border border-destructive/20 text-destructive p-3 rounded-lg text-xs font-semibold text-center mb-4">
+                      {userFormError}
+                    </div>
+                  )}
+                  {userFormSuccess && (
+                    <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 p-3 rounded-lg text-xs font-semibold text-center mb-4">
+                      {userFormSuccess}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleCreateUser} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="new-username">ชื่อผู้ใช้ (Username)</Label>
+                      <Input
+                        id="new-username"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        placeholder="เช่น user_test"
+                        required
+                        disabled={userSubmitting}
+                        className="bg-background/50"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="new-phone">เบอร์โทรศัพท์ (Phone) {role === 'USER' && <span className="text-destructive">*</span>}</Label>
+                      <Input
+                        id="new-phone"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        placeholder="เช่น 0812345678"
+                        required={role === 'USER'}
+                        disabled={userSubmitting}
+                        className="bg-background/50"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="new-password">รหัสผ่าน (Password)</Label>
+                      <Input
+                        type="password"
+                        id="new-password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="รหัสผ่านผู้ใช้"
+                        required
+                        disabled={userSubmitting}
+                        className="bg-background/50"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="new-name">ชื่อ-นามสกุล (Name)</Label>
+                      <Input
+                        id="new-name"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder="เช่น สมเกียรติ ยั่งยืน"
+                        required
+                        disabled={userSubmitting}
+                        className="bg-background/50"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="new-role">บทบาท (Role)</Label>
+                      <select 
+                        className="flex h-9 w-full rounded-md border border-input bg-background/50 px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                        id="new-role"
+                        value={role}
+                        onChange={(e) => setRole(e.target.value)}
+                        disabled={userSubmitting}
+                      >
+                        <option value="USER" className="bg-card">ผู้ใช้งานทั่วไป (USER)</option>
+                        <option value="ADMIN" className="bg-card">ผู้ดูแลระบบ (ADMIN)</option>
+                      </select>
+                    </div>
+
+                    {role === 'USER' && (
+                      <div className="space-y-2">
+                        <Label htmlFor="assign-account">มอบหมายบัญชีธนาคารรับเงิน</Label>
+                        <select 
+                          className="flex h-9 w-full rounded-md border border-input bg-background/50 px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                          id="assign-account"
+                          value={assignedAccountId}
+                          onChange={(e) => setAssignedAccountId(e.target.value)}
+                          disabled={userSubmitting}
+                        >
+                          <option value="" className="bg-card">-- ไม่ระบุ (โอนบัญชีใดก็ได้) --</option>
+                          {accounts.map(acc => (
+                            <option key={acc.id} value={acc.id} className="bg-card">
+                              {acc.bankName} - {acc.accountNumber} ({acc.accountName})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    <Button
+                      type="submit"
+                      className="w-full"
+                      disabled={userSubmitting}
+                    >
+                      {userSubmitting ? 'กำลังบันทึก...' : 'สร้างสมาชิกใหม่'}
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+
+              {/* List users */}
+              <Card className="lg:col-span-7 shadow-sm min-h-[500px]">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Users className="h-5 w-5 text-primary" />
+                    รายชื่อผู้ใช้งานทั่วไปในระบบ
+                  </CardTitle>
+                  <CardDescription>
+                    รายชื่อผู้ใช้ที่ลงทะเบียนแล้ว (ไม่รวมแอดมิน) และบัญชีธนาคารรับเงินที่ถูกเลือกให้
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="border rounded-md overflow-hidden">
+                    <Table>
+                      <TableHeader className="bg-muted/50">
+                        <TableRow>
+                          <TableHead className="font-bold text-xs">ชื่อ / รายละเอียด</TableHead>
+                          <TableHead className="font-bold text-xs">บทบาท</TableHead>
+                          <TableHead className="font-bold text-xs">บัญชีรับเงิน</TableHead>
+                          <TableHead className="font-bold text-xs text-right">จัดการ</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {users.filter(u => u.role !== 'ADMIN').length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center text-muted-foreground py-12">
+                              ยังไม่พบข้อมูลผู้ใช้งานทั่วไปในระบบ
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          users.filter(u => u.role !== 'ADMIN').map((u) => (
+                            <TableRow key={u.id} className="hover:bg-muted/10">
+                              <TableCell>
+                                <div className="font-bold text-sm">{u.name}</div>
+                                <div className="text-[10px] text-muted-foreground">
+                                  @{u.username} {u.phone ? `| 📞 ${u.phone}` : ''}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="bg-indigo-500/5 text-indigo-300 border-indigo-500/10 text-[10px] uppercase font-bold">
+                                  {u.role}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {u.assignedAccount ? (
+                                  <div className="text-xs">
+                                    <div className="font-semibold text-indigo-400">{u.assignedAccount.bankName}</div>
+                                    <div className="text-[10px] text-muted-foreground font-mono">{u.assignedAccount.accountNumber}</div>
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-destructive font-semibold">
+                                    ยังไม่ได้กำหนดบัญชี
+                                  </span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-xs h-8 px-2.5"
+                                  onClick={() => startEditingUser(u)}
+                                >
+                                  <Edit3 className="h-3.5 w-3.5 mr-1" />
+                                  แก้ไข
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+
+            </div>
+          </TabsContent>
+
+          {/* Tab 3: Bank Accounts Management */}
+          <TabsContent value="accounts">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+              
+              {/* Create Account Form */}
+              <Card className="lg:col-span-5 shadow-sm">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <PlusCircle className="h-5 w-5 text-primary" />
+                    เพิ่มบัญชีรับเงินใหม่
+                  </CardTitle>
+                  <CardDescription>
+                    เพิ่มข้อมูลบัญชีธนาคารปลายทางสำหรับการรับชำระเงิน
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {accountFormError && (
+                    <div className="bg-destructive/10 border border-destructive/20 text-destructive p-3 rounded-lg text-xs font-semibold text-center mb-4">
+                      {accountFormError}
+                    </div>
+                  )}
+                  {accountFormSuccess && (
+                    <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 p-3 rounded-lg text-xs font-semibold text-center mb-4">
+                      {accountFormSuccess}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleCreateAccount} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="bank-name">ชื่อธนาคาร / บริการ</Label>
+                      <Input
+                        id="bank-name"
+                        value={bankName}
+                        onChange={(e) => setBankName(e.target.value)}
+                        placeholder="เช่น ธนาคารกสิกรไทย (KBANK) หรือ พร้อมเพย์"
+                        required
+                        disabled={accountSubmitting}
+                        className="bg-background/50"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="account-number">เลขที่บัญชี / เบอร์พร้อมเพย์</Label>
+                      <Input
+                        id="account-number"
+                        value={accountNumber}
+                        onChange={(e) => setAccountNumber(e.target.value)}
+                        placeholder="เช่น 123-4-56789-0 หรือ 0812345678"
+                        required
+                        disabled={accountSubmitting}
+                        className="bg-background/50"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="account-name">ชื่อเจ้าของบัญชี</Label>
+                      <Input
+                        id="account-name"
+                        value={accountName}
+                        onChange={(e) => setAccountName(e.target.value)}
+                        placeholder="เช่น บจก. สต็อกวิชั่น คอร์ป"
+                        required
+                        disabled={accountSubmitting}
+                        className="bg-background/50"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="qr-type">ประเภท QR Code สำหรับจ่ายเงิน</Label>
+                      <select 
+                        className="flex h-9 w-full rounded-md border border-input bg-background/50 px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                        id="qr-type"
+                        value={qrType}
+                        onChange={(e) => setQrType(e.target.value)}
+                        disabled={accountSubmitting}
+                      >
+                        <option value="PROMPTPAY" className="bg-card">สร้าง QR PromptPay อัตโนมัติ (Dynamic/Static)</option>
+                      </select>
+                    </div>
+
+                    <Button
+                      type="submit"
+                      className="w-full"
+                      disabled={accountSubmitting}
+                    >
+                      {accountSubmitting ? 'กำลังบันทึก...' : 'เพิ่มบัญชีธนาคาร'}
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+
+              {/* List Bank Accounts */}
+              <Card className="lg:col-span-7 shadow-sm min-h-[500px]">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <CreditCard className="h-5 w-5 text-primary" />
+                    บัญชีธนาคารทั้งหมดในระบบ
+                  </CardTitle>
+                  <CardDescription>
+                    รายการบัญชีรับโอนเงินที่จะใช้สร้างคิวอาร์โค้ดชำระเงินให้กับสมาชิก
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="border rounded-md overflow-hidden">
+                    <Table>
+                      <TableHeader className="bg-muted/50">
+                        <TableRow>
+                          <TableHead className="font-bold text-xs">ธนาคาร</TableHead>
+                          <TableHead className="font-bold text-xs">เลขบัญชี / เบอร์</TableHead>
+                          <TableHead className="font-bold text-xs">ชื่อบัญชี</TableHead>
+                          <TableHead className="font-bold text-xs text-right">จัดการ</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {accounts.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center text-muted-foreground py-12">
+                              ยังไม่พบข้อมูลบัญชีธนาคารในระบบ
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          accounts.map((acc) => (
+                            <TableRow key={acc.id} className="hover:bg-muted/10">
+                              <TableCell className="font-bold text-sm text-indigo-400">{acc.bankName}</TableCell>
+                              <TableCell className="font-mono text-sm font-semibold">{acc.accountNumber}</TableCell>
+                              <TableCell className="text-sm">{acc.accountName}</TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-xs h-8 px-2.5"
+                                  onClick={() => startEditingAccount(acc)}
+                                >
+                                  <Edit3 className="h-3.5 w-3.5 mr-1" />
+                                  แก้ไข
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+
+            </div>
+          </TabsContent>
+        </Tabs>
+      </main>
+
+      {/* Rejection Overlay Modal */}
+      {selectedPayment && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-card border rounded-lg w-full max-w-md p-6 shadow-lg relative animate-in fade-in zoom-in-95 duration-200">
+            <button className="absolute top-4 right-4 text-muted-foreground hover:text-foreground text-xl" onClick={() => setSelectedPayment(null)}>×</button>
+            <h3 className="text-lg font-bold text-destructive flex items-center gap-2 mb-3">
+              <AlertTriangle className="h-5 w-5" />
+              ปฏิเสธรายการแจ้งชำระเงิน
+            </h3>
+            
+            <div className="mb-4 text-sm bg-secondary/20 p-3 rounded-lg border border-border">
+              <p className="mb-1">ผู้ทำรายการ: <strong>{selectedPayment.user.name}</strong></p>
+              <p>จำนวนเงิน: <strong>{selectedPayment.amount.toLocaleString('th-TH')} บาท</strong></p>
+            </div>
+
+            <form onSubmit={handleRejectPaymentSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="reject-reason">ระบุเหตุผลในการปฏิเสธการโอนเงิน</Label>
+                <Textarea
+                  id="reject-reason"
+                  rows={3}
+                  value={rejectedReason}
+                  onChange={(e) => setRejectedReason(e.target.value)}
+                  placeholder="เช่น สลิปซ้ำ, ยอดเงินไม่ตรง, วันเวลาไม่ถูกต้อง"
+                  required
+                  className="bg-background/50 border-input"
+                />
+              </div>
+
+              <div className="flex gap-2.5 justify-end">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setSelectedPayment(null)}
+                >
+                  ยกเลิก
+                </Button>
+                <Button 
+                  type="submit" 
+                  variant="destructive"
+                  disabled={statusSubmitting}
+                >
+                  ยืนยันการปฏิเสธ
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Slip Viewer Modal */}
+      {slipModalOpen && (
+        <div className="fixed inset-0 bg-background/90 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSlipModalOpen(false)}>
+          <div className="bg-card border rounded-lg w-full max-w-sm p-5 shadow-lg relative animate-in fade-in zoom-in-95 duration-200 flex flex-col items-center" onClick={e => e.stopPropagation()}>
+            <button className="absolute top-4 right-4 text-muted-foreground hover:text-foreground text-xl" onClick={() => setSlipModalOpen(false)}>×</button>
+            <h3 className="text-sm font-bold mb-4 text-center">
+              รูปภาพสลิปหลักฐานโอนเงิน
+            </h3>
+            <div className="w-full flex justify-center bg-black/10 p-2 rounded-lg border border-border">
+              <img 
+                src={viewingSlipUrl} 
+                alt="Uploaded Payment Slip" 
+                className="max-w-full max-h-[60vh] rounded-md object-contain shadow-lg" 
+              />
+            </div>
+            <Button 
+              variant="outline" 
+              onClick={() => setSlipModalOpen(false)}
+              className="mt-4 w-full"
+            >
+              ปิดหน้าต่าง
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Edit User Modal */}
+      {editingUser && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-card border rounded-lg w-full max-w-md p-6 shadow-lg relative animate-in fade-in zoom-in-95 duration-200">
+            <button className="absolute top-4 right-4 text-muted-foreground hover:text-foreground text-xl" onClick={() => setEditingUser(null)}>×</button>
+            <h3 className="text-lg font-bold mb-4 flex items-center gap-1.5">
+              <Edit3 className="h-5 w-5 text-primary" />
+              แก้ไขข้อมูลผู้ใช้งาน
+            </h3>
+            
+            {editFormError && (
+              <div className="bg-destructive/10 border border-destructive/20 text-destructive p-3 rounded-lg text-xs font-semibold text-center mb-4">
+                {editFormError}
+              </div>
+            )}
+            {editFormSuccess && (
+              <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 p-3 rounded-lg text-xs font-semibold text-center mb-4">
+                {editFormSuccess}
+              </div>
+            )}
+
+            <form onSubmit={handleEditUserSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-username">ชื่อผู้ใช้ (Username)</Label>
+                <Input
+                  id="edit-username"
+                  value={editUsername}
+                  onChange={(e) => setEditUsername(e.target.value)}
+                  required
+                  disabled={editSubmitting}
+                  className="bg-background/50"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-phone">เบอร์โทรศัพท์ (Phone) {editRole === 'USER' && <span className="text-destructive">*</span>}</Label>
+                <Input
+                  id="edit-phone"
+                  value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value)}
+                  placeholder="เช่น 0812345678"
+                  required={editRole === 'USER'}
+                  disabled={editSubmitting}
+                  className="bg-background/50"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-password">รหัสผ่านใหม่ (Password)</Label>
+                <Input
+                  type="password"
+                  id="edit-password"
+                  value={editPassword}
+                  onChange={(e) => setEditPassword(e.target.value)}
+                  placeholder="เว้นว่างไว้เพื่อใช้รหัสผ่านเดิม"
+                  disabled={editSubmitting}
+                  className="bg-background/50"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-name">ชื่อ-นามสกุล (Name)</Label>
+                <Input
+                  id="edit-name"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  required
+                  disabled={editSubmitting}
+                  className="bg-background/50"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-role">บทบาท (Role)</Label>
+                <select 
+                  className="flex h-9 w-full rounded-md border border-input bg-background/50 px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                  id="edit-role"
+                  value={editRole}
+                  onChange={(e) => setEditRole(e.target.value)}
+                  disabled={editSubmitting}
+                >
+                  <option value="USER" className="bg-card">ผู้ใช้งานทั่วไป (USER)</option>
+                  <option value="ADMIN" className="bg-card">ผู้ดูแลระบบ (ADMIN)</option>
+                </select>
+              </div>
+
+              {editRole === 'USER' && (
+                <div className="space-y-2">
+                  <Label htmlFor="edit-assign-account">มอบหมายบัญชีธนาคารรับเงิน</Label>
+                  <select 
+                    className="flex h-9 w-full rounded-md border border-input bg-background/50 px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                    id="edit-assign-account"
+                    value={editAssignedAccountId}
+                    onChange={(e) => setEditAssignedAccountId(e.target.value)}
+                    disabled={editSubmitting}
+                  >
+                    <option value="" className="bg-card">-- ไม่ระบุ (โอนบัญชีใดก็ได้) --</option>
+                    {accounts.map(acc => (
+                      <option key={acc.id} value={acc.id} className="bg-card">
+                        {acc.bankName} - {acc.accountNumber} ({acc.accountName})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="flex gap-2 justify-end pt-2">
+                <Button 
+                  type="button" 
+                  variant="outline"
+                  onClick={() => setEditingUser(null)}
+                  disabled={editSubmitting}
+                >
+                  ยกเลิก
+                </Button>
+                <Button 
+                  type="submit" 
+                  disabled={editSubmitting}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+                >
+                  {editSubmitting ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Bank Account Modal */}
+      {editingAccount && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-card border rounded-lg w-full max-w-md p-6 shadow-lg relative animate-in fade-in zoom-in-95 duration-200">
+            <button className="absolute top-4 right-4 text-muted-foreground hover:text-foreground text-xl" onClick={() => setEditingAccount(null)}>×</button>
+            <h3 className="text-lg font-bold mb-4 flex items-center gap-1.5">
+              <Edit3 className="h-5 w-5 text-primary" />
+              แก้ไขข้อมูลบัญชีรับเงิน
+            </h3>
+            
+            {editAccountFormError && (
+              <div className="bg-destructive/10 border border-destructive/20 text-destructive p-3 rounded-lg text-xs font-semibold text-center mb-4">
+                {editAccountFormError}
+              </div>
+            )}
+            {editAccountFormSuccess && (
+              <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 p-3 rounded-lg text-xs font-semibold text-center mb-4">
+                {editAccountFormSuccess}
+              </div>
+            )}
+
+            <form onSubmit={handleEditAccountSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-bank-name">ชื่อธนาคาร / บริการ</Label>
+                <Input
+                  id="edit-bank-name"
+                  value={editBankName}
+                  onChange={(e) => setEditBankName(e.target.value)}
+                  required
+                  disabled={editAccountSubmitting}
+                  className="bg-background/50"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-account-number">เลขที่บัญชี / เบอร์พร้อมเพย์</Label>
+                <Input
+                  id="edit-account-number"
+                  value={editAccountNumber}
+                  onChange={(e) => setEditAccountNumber(e.target.value)}
+                  required
+                  disabled={editAccountSubmitting}
+                  className="bg-background/50"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-account-name">ชื่อเจ้าของบัญชี</Label>
+                <Input
+                  id="edit-account-name"
+                  value={editAccountName}
+                  onChange={(e) => setEditAccountName(e.target.value)}
+                  required
+                  disabled={editAccountSubmitting}
+                  className="bg-background/50"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-qr-type">ประเภท QR Code สำหรับจ่ายเงิน</Label>
+                <select 
+                  className="flex h-9 w-full rounded-md border border-input bg-background/50 px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                  id="edit-qr-type"
+                  value={editQrType}
+                  onChange={(e) => setEditQrType(e.target.value)}
+                  disabled={editAccountSubmitting}
+                >
+                  <option value="PROMPTPAY" className="bg-card">สร้าง QR PromptPay อัตโนมัติ (Dynamic/Static)</option>
+                </select>
+              </div>
+
+              <div className="flex gap-2 justify-end pt-2">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setEditingAccount(null)}
+                  disabled={editAccountSubmitting}
+                >
+                  ยกเลิก
+                </Button>
+                <Button 
+                  type="submit" 
+                  disabled={editAccountSubmitting}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+                >
+                  {editAccountSubmitting ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}

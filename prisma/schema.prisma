@@ -1,0 +1,48 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id                 Int          @id @default(autoincrement())
+  username           String       @unique
+  phone              String?      @unique
+  password           String
+  name               String
+  role               String       @default("USER") // "USER" or "ADMIN"
+  assignedAccountId  Int?
+  assignedAccount    BankAccount? @relation(fields: [assignedAccountId], references: [id], onDelete: SetNull)
+  payments           Payment[]
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+}
+
+model BankAccount {
+  id            Int       @id @default(autoincrement())
+  bankName      String    // e.g., "ธนาคารกสิกรไทย", "ธนาคารไทยพาณิชย์", "พร้อมเพย์"
+  accountNumber String    // Account number or PromptPay ID
+  accountName   String    // Name of account holder
+  qrType        String    @default("PROMPTPAY") // "PROMPTPAY" or "STATIC"
+  users         User[]
+  payments      Payment[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Payment {
+  id            Int          @id @default(autoincrement())
+  userId        Int
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bankAccountId Int
+  bankAccount   BankAccount  @relation(fields: [bankAccountId], references: [id])
+  amount        Float
+  slipUrl       String       // URL/path to uploaded slip
+  status        String       @default("PENDING") // "PENDING", "APPROVED", "REJECTED"
+  rejectedReason String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}
