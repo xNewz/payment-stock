@@ -10,7 +10,7 @@ const prompt = Prompt({
 });
 
 export const metadata = {
-  title: "Secure Payment Portal | StockVision",
+  title: "Payment Portal | StockVision",
   description:
     "StockVision Secure Manual Payment Verification & Transfer Portal with PromptPay QR Code Generation.",
 };
