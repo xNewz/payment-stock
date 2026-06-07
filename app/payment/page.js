@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import QRCode from 'qrcode';
 import { generatePromptPayPayload } from '@/lib/promptpay';
+import { compressImage } from '@/lib/imageCompress';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -31,23 +32,39 @@ export default function PaymentPage() {
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadPhase, setUploadPhase] = useState(''); // 'compressing' | 'uploading' | 'processing'
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [dragActive, setDragActive] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
 
-  // Fetch user profile and payments history
+  // Fetch payments history only (lightweight, called after each upload)
+  const fetchPayments = async () => {
+    try {
+      const payRes = await fetch('/api/payments');
+      if (payRes.ok) {
+        const payData = await payRes.json();
+        setPayments(payData.payments);
+      }
+    } catch (err) {
+      console.error('fetchPayments error:', err);
+    }
+  };
+
+  // Initial load: profile + payments in parallel
   const fetchData = async () => {
     try {
-      const meRes = await fetch(`/api/auth/me?t=${Date.now()}`);
+      const [meRes, payRes] = await Promise.all([
+        fetch(`/api/auth/me?t=${Date.now()}`),
+        fetch('/api/payments'),
+      ]);
       if (!meRes.ok) {
         window.location.href = '/login';
         return;
       }
       const meData = await meRes.json();
       setUser(meData.user);
-
-      const payRes = await fetch('/api/payments');
       if (payRes.ok) {
         const payData = await payRes.json();
         setPayments(payData.payments);
@@ -135,6 +152,33 @@ export default function PaymentPage() {
     setPreviewUrl(URL.createObjectURL(selectedFile));
   };
 
+  const uploadWithProgress = (formData) => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/payments');
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          const pct = Math.round((e.loaded / e.total) * 100);
+          setUploadProgress(pct);
+          if (pct >= 100) setUploadPhase('processing');
+        }
+      };
+      xhr.onload = () => {
+        let data = null;
+        try { data = JSON.parse(xhr.responseText); } catch {}
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(data);
+        } else {
+          reject(new Error((data && data.error) || `Upload failed (HTTP ${xhr.status})`));
+        }
+      };
+      xhr.onerror = () => reject(new Error('การเชื่อมต่อขัดข้อง กรุณาลองใหม่'));
+      xhr.ontimeout = () => reject(new Error('อัปโหลดใช้เวลานานเกินไป กรุณาลองใหม่'));
+      xhr.timeout = 60_000;
+      xhr.send(formData);
+    });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -156,31 +200,34 @@ export default function PaymentPage() {
     }
 
     setSubmitting(true);
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('amount', amount);
-    formData.append('bankAccountId', user.assignedAccount.id);
+    setUploadProgress(0);
+    setUploadPhase('compressing');
 
     try {
-      const res = await fetch('/api/payments', {
-        method: 'POST',
-        body: formData,
-      });
+      // 1) Compress image on client (5MB -> ~300KB typical)
+      const compressed = await compressImage(file);
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'การส่งสลิปชำระเงินล้มเหลว');
-      }
+      // 2) Upload with progress tracking
+      setUploadPhase('uploading');
+      const formData = new FormData();
+      formData.append('file', compressed);
+      formData.append('amount', amount);
+      formData.append('bankAccountId', user.assignedAccount.id);
+      await uploadWithProgress(formData);
 
+      // 3) Refresh only the payment list (profile didn't change)
       setSuccessMsg('อัปโหลดสลิปเรียบร้อยแล้ว รอผู้ดูแลระบบตรวจสอบข้อมูล');
       setAmount('');
       setFile(null);
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
       setPreviewUrl('');
-      fetchData();
+      fetchPayments();
     } catch (err) {
       setError(err.message);
     } finally {
       setSubmitting(false);
+      setUploadProgress(0);
+      setUploadPhase('');
     }
   };
 
@@ -398,6 +445,30 @@ export default function PaymentPage() {
                     {successMsg && (
                       <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 p-3 rounded-md text-sm font-medium text-center">
                         {successMsg}
+                      </div>
+                    )}
+
+                    {submitting && (
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-muted-foreground font-medium">
+                            {uploadPhase === 'compressing' && 'กำลังบีบอัดรูปภาพ...'}
+                            {uploadPhase === 'uploading' && `กำลังอัปโหลด ${uploadProgress}%`}
+                            {uploadPhase === 'processing' && 'กำลังบันทึกข้อมูล...'}
+                          </span>
+                        </div>
+                        <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-primary transition-all duration-200 ease-out"
+                            style={{
+                              width: uploadPhase === 'compressing'
+                                ? '15%'
+                                : uploadPhase === 'processing'
+                                ? '100%'
+                                : `${Math.max(15, uploadProgress * 0.85 + 15)}%`,
+                            }}
+                          />
+                        </div>
                       </div>
                     )}
 
