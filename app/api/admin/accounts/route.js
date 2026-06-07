@@ -122,7 +122,7 @@ export async function DELETE(request) {
 
     const accountId = parseInt(id, 10);
 
-    // Check if account is still linked to any user
+    // Check if account is still assigned to any user
     const linkedUsers = await prisma.user.count({
       where: { assignedAccountId: accountId },
     });
@@ -130,6 +130,18 @@ export async function DELETE(request) {
     if (linkedUsers > 0) {
       return NextResponse.json(
         { error: `ไม่สามารถลบได้ เนื่องจากบัญชีนี้ยังถูกกำหนดให้ผู้ใช้งาน ${linkedUsers} คน กรุณาเปลี่ยนบัญชีให้ผู้ใช้เหล่านั้นก่อน` },
+        { status: 400 }
+      );
+    }
+
+    // Check if there are payments linked to this account
+    const linkedPayments = await prisma.payment.count({
+      where: { bankAccountId: accountId },
+    });
+
+    if (linkedPayments > 0) {
+      return NextResponse.json(
+        { error: `ไม่สามารถลบได้ เนื่องจากมีรายการชำระเงิน ${linkedPayments} รายการที่ผูกกับบัญชีนี้อยู่ กรุณาลบรายการชำระเงินเหล่านั้นก่อน` },
         { status: 400 }
       );
     }
