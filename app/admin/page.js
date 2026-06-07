@@ -139,9 +139,9 @@ export default function AdminPage() {
   // Fetch initial profile
   const fetchProfile = async () => {
     try {
-      const res = await fetch('/api/auth/me');
+      const res = await fetch(`/api/auth/me?t=${Date.now()}`);
       if (!res.ok) {
-        router.push('/login');
+        window.location.href = '/login';
         return;
       }
       const data = await res.json();

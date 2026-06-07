@@ -39,9 +39,9 @@ export default function PaymentPage() {
   // Fetch user profile and payments history
   const fetchData = async () => {
     try {
-      const meRes = await fetch('/api/auth/me');
+      const meRes = await fetch(`/api/auth/me?t=${Date.now()}`);
       if (!meRes.ok) {
-        router.push('/login');
+        window.location.href = '/login';
         return;
       }
       const meData = await meRes.json();

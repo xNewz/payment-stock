@@ -67,8 +67,9 @@ export default function LoginPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
 
-      router.refresh();
-      router.push(data.user.role === 'ADMIN' ? '/admin' : '/payment');
+      // Use hard redirect (window.location.href) instead of router.push
+      // This is crucial for WebViews (LINE, Facebook) to properly sync the cookie jar
+      window.location.href = data.user.role === 'ADMIN' ? '/admin' : '/payment';
     } catch (err) {
       setError(err.message);
       // On error, go back to identifier step so user can re-type
