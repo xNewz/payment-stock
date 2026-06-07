@@ -1,6 +1,7 @@
 import "./globals.css";
 import { Prompt } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
+import { WebviewDetector } from "@/components/webview-detector";
 
 const prompt = Prompt({
   subsets: ["thai", "latin"],
@@ -25,6 +26,7 @@ export default function RootLayout({ children }) {
           enableSystem
           disableTransitionOnChange
         >
+          <WebviewDetector />
           {children}
         </ThemeProvider>
       </body>
