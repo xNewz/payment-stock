@@ -30,13 +30,19 @@ import {
   Eye,
   AlertTriangle,
   FolderOpen,
-  Trash2
+  Trash2,
+  BarChart3,
+  Search,
+  Filter,
+  SlidersHorizontal,
+  TrendingUp,
+  RotateCcw
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
 
 export default function AdminPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState('payments'); // 'payments' | 'users' | 'accounts'
+  const [activeTab, setActiveTab] = useState('payments'); // 'payments' | 'users' | 'accounts' | 'transactions'
   const [loading, setLoading] = useState(true);
   const [adminUser, setAdminUser] = useState(null);
   
@@ -94,6 +100,14 @@ export default function AdminPage() {
   const [statusSubmitting, setStatusSubmitting] = useState(false);
   const [slipModalOpen, setSlipModalOpen] = useState(false);
   const [viewingSlipUrl, setViewingSlipUrl] = useState('');
+
+  // Transaction tab filter state
+  const [txFilterUser, setTxFilterUser] = useState('ALL');
+  const [txFilterStatus, setTxFilterStatus] = useState('ALL');
+  const [txFilterAccount, setTxFilterAccount] = useState('ALL');
+  const [txFilterDateFrom, setTxFilterDateFrom] = useState('');
+  const [txFilterDateTo, setTxFilterDateTo] = useState('');
+  const [txSearch, setTxSearch] = useState('');
 
   // Delete confirmation modal state
   const [deleteTarget, setDeleteTarget] = useState(null); // { type: 'payment'|'user'|'account', id, label }
@@ -504,17 +518,20 @@ export default function AdminPage() {
       <main className="flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-8">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <TabsList className="bg-muted/50 p-1 border rounded-lg inline-flex max-w-fit w-full sm:w-auto h-auto">
+            <TabsList className="bg-muted/50 p-1 border rounded-lg inline-flex max-w-fit w-full sm:w-auto h-auto flex-wrap">
               <TabsTrigger value="payments" className="rounded-md px-4 py-2 text-sm font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
-              รายการตรวจสลิป ({payments.filter(p => p.status === 'PENDING').length})
-            </TabsTrigger>
-            <TabsTrigger value="users" className="rounded-md px-4 py-2 text-sm font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
-              จัดการผู้ใช้งาน
-            </TabsTrigger>
-            <TabsTrigger value="accounts" className="rounded-md px-4 py-2 text-sm font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
-              จัดการบัญชีธนาคาร
-            </TabsTrigger>
-          </TabsList>
+                รายการตรวจสลิป ({payments.filter(p => p.status === 'PENDING').length})
+              </TabsTrigger>
+              <TabsTrigger value="transactions" className="rounded-md px-4 py-2 text-sm font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
+                ธุรกรรมทั้งหมด ({payments.length})
+              </TabsTrigger>
+              <TabsTrigger value="users" className="rounded-md px-4 py-2 text-sm font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
+                จัดการผู้ใช้งาน
+              </TabsTrigger>
+              <TabsTrigger value="accounts" className="rounded-md px-4 py-2 text-sm font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
+                จัดการบัญชีธนาคาร
+              </TabsTrigger>
+            </TabsList>
           </div>
 
           {/* Tab 1: Payments Slip Verification */}
@@ -1024,6 +1041,324 @@ export default function AdminPage() {
 
             </div>
           </TabsContent>
+
+          {/* Tab 4: Transaction History */}
+          <TabsContent value="transactions">
+            {(() => {
+              // Compute filtered transactions
+              const filteredTx = payments.filter(p => {
+                if (txFilterUser !== 'ALL' && String(p.userId || p.user?.id) !== txFilterUser && p.user?.username !== txFilterUser) return false;
+                if (txFilterStatus !== 'ALL' && p.status !== txFilterStatus) return false;
+                if (txFilterAccount !== 'ALL' && String(p.bankAccount?.accountNumber) !== txFilterAccount) return false;
+                if (txFilterDateFrom) {
+                  const from = new Date(txFilterDateFrom);
+                  from.setHours(0, 0, 0, 0);
+                  if (new Date(p.createdAt) < from) return false;
+                }
+                if (txFilterDateTo) {
+                  const to = new Date(txFilterDateTo);
+                  to.setHours(23, 59, 59, 999);
+                  if (new Date(p.createdAt) > to) return false;
+                }
+                if (txSearch) {
+                  const q = txSearch.toLowerCase();
+                  const match =
+                    p.user?.name?.toLowerCase().includes(q) ||
+                    p.user?.username?.toLowerCase().includes(q) ||
+                    p.bankAccount?.bankName?.toLowerCase().includes(q) ||
+                    p.bankAccount?.accountNumber?.includes(q) ||
+                    String(p.amount).includes(q);
+                  if (!match) return false;
+                }
+                return true;
+              });
+
+              const totalAmount = filteredTx.reduce((sum, p) => sum + (p.amount || 0), 0);
+              const approvedAmount = filteredTx.filter(p => p.status === 'APPROVED').reduce((sum, p) => sum + (p.amount || 0), 0);
+              const pendingCount = filteredTx.filter(p => p.status === 'PENDING').length;
+              const rejectedCount = filteredTx.filter(p => p.status === 'REJECTED').length;
+
+              // unique users for filter dropdown
+              const uniqueUsers = Array.from(new Map(payments.map(p => [p.user?.username, p.user])).values()).filter(Boolean);
+              const uniqueAccounts = Array.from(new Map(payments.map(p => [p.bankAccount?.accountNumber, p.bankAccount])).values()).filter(Boolean);
+
+              const hasFilters = txFilterUser !== 'ALL' || txFilterStatus !== 'ALL' || txFilterAccount !== 'ALL' || txFilterDateFrom || txFilterDateTo || txSearch;
+
+              return (
+                <div className="space-y-6">
+                  {/* Summary Stats */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="bg-card border rounded-xl p-4 flex flex-col gap-1">
+                      <span className="text-xs text-muted-foreground">รายการทั้งหมด</span>
+                      <span className="text-2xl font-bold">{filteredTx.length}</span>
+                      <span className="text-[10px] text-muted-foreground">รายการ</span>
+                    </div>
+                    <div className="bg-card border rounded-xl p-4 flex flex-col gap-1">
+                      <span className="text-xs text-muted-foreground">ยอดรวมที่อนุมัติ</span>
+                      <span className="text-2xl font-bold text-emerald-400">{approvedAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
+                      <span className="text-[10px] text-muted-foreground">บาท</span>
+                    </div>
+                    <div className="bg-card border rounded-xl p-4 flex flex-col gap-1">
+                      <span className="text-xs text-muted-foreground">รอดำเนินการ</span>
+                      <span className="text-2xl font-bold text-amber-400">{pendingCount}</span>
+                      <span className="text-[10px] text-muted-foreground">รายการ</span>
+                    </div>
+                    <div className="bg-card border rounded-xl p-4 flex flex-col gap-1">
+                      <span className="text-xs text-muted-foreground">ถูกปฏิเสธ</span>
+                      <span className="text-2xl font-bold text-destructive">{rejectedCount}</span>
+                      <span className="text-[10px] text-muted-foreground">รายการ</span>
+                    </div>
+                  </div>
+
+                  {/* Filters */}
+                  <Card className="shadow-sm">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <SlidersHorizontal className="h-4 w-4 text-primary" />
+                        กรองข้อมูลธุรกรรม
+                        {hasFilters && (
+                          <button
+                            onClick={() => { setTxFilterUser('ALL'); setTxFilterStatus('ALL'); setTxFilterAccount('ALL'); setTxFilterDateFrom(''); setTxFilterDateTo(''); setTxSearch(''); }}
+                            className="ml-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                            ล้างตัวกรอง
+                          </button>
+                        )}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {/* Search */}
+                        <div className="relative">
+                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                          <input
+                            type="text"
+                            placeholder="ค้นหาชื่อ, username, ธนาคาร..."
+                            value={txSearch}
+                            onChange={e => setTxSearch(e.target.value)}
+                            className="w-full pl-8 pr-3 h-9 rounded-md border border-input bg-background/50 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          />
+                        </div>
+
+                        {/* User filter */}
+                        <select
+                          value={txFilterUser}
+                          onChange={e => setTxFilterUser(e.target.value)}
+                          className="h-9 w-full rounded-md border border-input bg-background/50 px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        >
+                          <option value="ALL">👤 ผู้ใช้ทั้งหมด</option>
+                          {uniqueUsers.map(u => (
+                            <option key={u.username} value={u.username}>{u.name} (@{u.username})</option>
+                          ))}
+                        </select>
+
+                        {/* Status filter */}
+                        <select
+                          value={txFilterStatus}
+                          onChange={e => setTxFilterStatus(e.target.value)}
+                          className="h-9 w-full rounded-md border border-input bg-background/50 px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        >
+                          <option value="ALL">🗂 ทุกสถานะ</option>
+                          <option value="PENDING">⏳ รอดำเนินการ</option>
+                          <option value="APPROVED">✅ อนุมัติแล้ว</option>
+                          <option value="REJECTED">❌ ถูกปฏิเสธ</option>
+                        </select>
+
+                        {/* Date range */}
+                        <div className="flex gap-2 items-center">
+                          <input
+                            type="date"
+                            value={txFilterDateFrom}
+                            onChange={e => setTxFilterDateFrom(e.target.value)}
+                            className="h-9 w-full rounded-md border border-input bg-background/50 px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            title="จากวันที่"
+                          />
+                          <span className="text-muted-foreground text-xs shrink-0">ถึง</span>
+                          <input
+                            type="date"
+                            value={txFilterDateTo}
+                            onChange={e => setTxFilterDateTo(e.target.value)}
+                            className="h-9 w-full rounded-md border border-input bg-background/50 px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            title="ถึงวันที่"
+                          />
+                        </div>
+
+                        {/* Account filter */}
+                        <select
+                          value={txFilterAccount}
+                          onChange={e => setTxFilterAccount(e.target.value)}
+                          className="h-9 w-full rounded-md border border-input bg-background/50 px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        >
+                          <option value="ALL">🏦 บัญชีทั้งหมด</option>
+                          {uniqueAccounts.map(acc => (
+                            <option key={acc.accountNumber} value={acc.accountNumber}>
+                              {acc.bankName} – {acc.accountNumber}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Transaction Table */}
+                  <Card className="shadow-sm">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <BarChart3 className="h-4 w-4 text-primary" />
+                          รายการธุรกรรม
+                        </CardTitle>
+                        <span className="text-xs text-muted-foreground">
+                          แสดง <strong>{filteredTx.length}</strong> / {payments.length} รายการ
+                        </span>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      {filteredTx.length === 0 ? (
+                        <div className="text-center py-16 text-muted-foreground">
+                          <Filter className="h-8 w-8 mx-auto mb-3 opacity-30" />
+                          <p className="text-sm">ไม่พบรายการที่ตรงกับเงื่อนไข</p>
+                        </div>
+                      ) : (
+                        <div className="overflow-auto">
+                          <Table>
+                            <TableHeader className="bg-muted/50">
+                              <TableRow>
+                                <TableHead className="font-bold text-xs pl-4">วัน-เวลา</TableHead>
+                                <TableHead className="font-bold text-xs">ผู้ใช้งาน</TableHead>
+                                <TableHead className="font-bold text-xs">บัญชีรับเงิน</TableHead>
+                                <TableHead className="font-bold text-xs text-right">จำนวนเงิน</TableHead>
+                                <TableHead className="font-bold text-xs">สถานะ</TableHead>
+                                <TableHead className="font-bold text-xs">สลิป</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {filteredTx.map(p => (
+                                <TableRow key={p.id} className="hover:bg-muted/10">
+                                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap pl-4">
+                                    {new Date(p.createdAt).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="font-bold text-sm">{p.user.name}</div>
+                                    <div className="text-[10px] text-muted-foreground">@{p.user.username}</div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="text-xs font-semibold">{p.bankAccount.bankName}</div>
+                                    <div className="text-[10px] text-muted-foreground font-mono">{p.bankAccount.accountNumber}</div>
+                                  </TableCell>
+                                  <TableCell className="text-right font-bold text-sm">
+                                    {p.amount.toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท
+                                  </TableCell>
+                                  <TableCell>
+                                    {p.status === 'PENDING' && (
+                                      <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20 text-[10px]">รอดำเนินการ</Badge>
+                                    )}
+                                    {p.status === 'APPROVED' && (
+                                      <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[10px]">อนุมัติสำเร็จ</Badge>
+                                    )}
+                                    {p.status === 'REJECTED' && (
+                                      <div className="flex flex-col gap-0.5">
+                                        <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20 text-[10px]">ปฏิเสธ</Badge>
+                                        {p.rejectedReason && (
+                                          <span className="text-[9px] text-destructive max-w-[100px] truncate" title={p.rejectedReason}>{p.rejectedReason}</span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="text-xs h-7 px-2"
+                                      onClick={() => { setViewingSlipUrl(p.slipUrl); setSlipModalOpen(true); }}
+                                    >
+                                      <Eye className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Per-user summary */}
+                  {txFilterUser === 'ALL' && (
+                    <Card className="shadow-sm">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <TrendingUp className="h-4 w-4 text-primary" />
+                          สรุปรายการแยกตามผู้ใช้
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="p-0">
+                        <Table>
+                          <TableHeader className="bg-muted/50">
+                            <TableRow>
+                              <TableHead className="font-bold text-xs pl-4">ผู้ใช้งาน</TableHead>
+                              <TableHead className="font-bold text-xs text-center">รวมรายการ</TableHead>
+                              <TableHead className="font-bold text-xs text-center">รอ</TableHead>
+                              <TableHead className="font-bold text-xs text-center">อนุมัติ</TableHead>
+                              <TableHead className="font-bold text-xs text-center">ปฏิเสธ</TableHead>
+                              <TableHead className="font-bold text-xs text-right pr-4">ยอดรวมที่อนุมัติ</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {uniqueUsers.map(u => {
+                              const uPayments = filteredTx.filter(p => p.user?.username === u.username);
+                              if (uPayments.length === 0) return null;
+                              const uApproved = uPayments.filter(p => p.status === 'APPROVED');
+                              const uPending = uPayments.filter(p => p.status === 'PENDING');
+                              const uRejected = uPayments.filter(p => p.status === 'REJECTED');
+                              const uTotal = uApproved.reduce((s, p) => s + (p.amount || 0), 0);
+                              return (
+                                <TableRow
+                                  key={u.username}
+                                  className="hover:bg-muted/10 cursor-pointer"
+                                  onClick={() => setTxFilterUser(u.username)}
+                                  title="คลิกเพื่อกรองรายการของผู้ใช้นี้"
+                                >
+                                  <TableCell className="pl-4">
+                                    <div className="font-bold text-sm">{u.name}</div>
+                                    <div className="text-[10px] text-muted-foreground">@{u.username}</div>
+                                  </TableCell>
+                                  <TableCell className="text-center font-semibold text-sm">{uPayments.length}</TableCell>
+                                  <TableCell className="text-center">
+                                    {uPending.length > 0 ? (
+                                      <span className="text-amber-400 font-bold text-sm">{uPending.length}</span>
+                                    ) : (
+                                      <span className="text-muted-foreground text-xs">-</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <span className="text-emerald-400 font-bold text-sm">{uApproved.length}</span>
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    {uRejected.length > 0 ? (
+                                      <span className="text-destructive font-bold text-sm">{uRejected.length}</span>
+                                    ) : (
+                                      <span className="text-muted-foreground text-xs">-</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-right pr-4 font-bold text-sm text-emerald-400">
+                                    {uTotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              );
+            })()}
+          </TabsContent>
+
         </Tabs>
       </main>
 
