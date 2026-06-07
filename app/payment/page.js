@@ -18,9 +18,7 @@ import {
   AlertTriangle,
   QrCode,
   KeyRound
-} from 'lucide-react';
-import { ThemeToggle } from '@/components/theme-toggle';
-import { ChangePasswordModal } from '@/components/change-password-modal';
+} from 'lucide-react';import { ThemeToggle } from '@/components/theme-toggle';
 
 export default function PaymentPage() {
   const router = useRouter();
@@ -37,7 +35,6 @@ export default function PaymentPage() {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [dragActive, setDragActive] = useState(false);
-  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
 
   // Fetch payments history only (lightweight, called after each upload)
   const fetchPayments = async () => {
@@ -261,11 +258,6 @@ export default function PaymentPage() {
             <div className="h-7 w-px bg-border hidden sm:block" />
             <ThemeToggle />
             <div className="h-7 w-px bg-border" />
-            <Button variant="ghost" size="sm" onClick={() => setIsPasswordModalOpen(true)} className="gap-2 text-muted-foreground hover:text-foreground">
-              <KeyRound className="h-4 w-4" />
-              <span className="hidden sm:inline">เปลี่ยนรหัสผ่าน</span>
-            </Button>
-            <div className="h-7 w-px bg-border hidden sm:block" />
             <Button variant="ghost" size="sm" onClick={handleLogout} className="gap-2 text-muted-foreground hover:text-foreground">
               <LogOut className="h-4 w-4" />
               <span className="hidden sm:inline">ออกจากระบบ</span>
@@ -498,11 +490,17 @@ export default function PaymentPage() {
           <Card className="shadow-md border-border/60">
             <CardHeader className="pb-4">
               <CardTitle className="text-lg font-semibold">ประวัติการชำระเงิน</CardTitle>
+              <CardDescription className="text-xs">
+                แสดงเฉพาะเดือน{' '}
+                <span className="font-semibold text-foreground">
+                  {new Date().toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })}
+                </span>
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {payments.length === 0 ? (
                 <div className="text-center py-6 text-muted-foreground text-sm">
-                  ยังไม่มีประวัติการชำระเงิน
+                  ยังไม่มีประวัติการชำระเงินในเดือนนี้
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -531,11 +529,6 @@ export default function PaymentPage() {
 
         </div>
       </main>
-
-      <ChangePasswordModal 
-        isOpen={isPasswordModalOpen} 
-        onClose={() => setIsPasswordModalOpen(false)} 
-      />
     </div>
   );
 }

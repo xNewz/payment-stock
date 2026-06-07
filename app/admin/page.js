@@ -118,6 +118,12 @@ export default function AdminPage() {
   const [txFilterDateFrom, setTxFilterDateFrom] = useState('');
   const [txFilterDateTo, setTxFilterDateTo] = useState('');
   const [txSearch, setTxSearch] = useState('');
+  const [txViewMode, setTxViewMode] = useState('per-account'); // 'per-account' | 'flat'
+  const TAX_LIMIT_PER_MONTH = 140000;
+
+  // User tab UI state
+  const [userSearch, setUserSearch] = useState('');
+  const [collapsedAccounts, setCollapsedAccounts] = useState(new Set()); // collapsed account IDs in user panels
 
   // API tab state
   const [copiedKey, setCopiedKey] = useState('');
@@ -885,117 +891,235 @@ export default function AdminPage() {
                 </CardContent>
               </Card>
 
-              {/* List users */}
-              <Card className="lg:col-span-7 shadow-sm min-h-[500px]">
-                <CardHeader>
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                    <div>
-                      <CardTitle className="text-lg flex items-center gap-2">
-                        <Users className="h-5 w-5 text-primary" />
-                        รายชื่อผู้ใช้งานทั่วไปในระบบ
-                      </CardTitle>
-                      <CardDescription>
-                        รายชื่อผู้ใช้ที่ลงทะเบียนแล้ว (ไม่รวมแอดมิน) และบัญชีธนาคารรับเงินที่ถูกเลือกให้
-                      </CardDescription>
+              {/* Right column: stats + per-account user panels */}
+              <div className="lg:col-span-7 space-y-4">
+                {(() => {
+                  const allUsers = users.filter(u => u.role === 'USER');
+                  const assigned = allUsers.filter(u => u.assignedAccountId);
+                  const unassigned = allUsers.filter(u => !u.assignedAccountId);
+
+                  // Compute current-month approved totals per account (for tax limit context)
+                  const now = new Date();
+                  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+                  const monthlyByAccount = {};
+                  for (const p of payments) {
+                    if (p.status !== 'APPROVED') continue;
+                    const d = new Date(p.createdAt);
+                    if (d < monthStart || d >= monthEnd) continue;
+                    const accId = p.bankAccount?.id || p.bankAccountId;
+                    monthlyByAccount[accId] = (monthlyByAccount[accId] || 0) + (p.amount || 0);
+                  }
+
+                  // Search filter (across all groups)
+                  const q = userSearch.trim().toLowerCase();
+                  const matchUser = (u) => !q ||
+                    u.name?.toLowerCase().includes(q) ||
+                    u.username?.toLowerCase().includes(q) ||
+                    (u.phone || '').includes(q);
+
+                  const toggleCollapsed = (id) => {
+                    setCollapsedAccounts(prev => {
+                      const next = new Set(prev);
+                      if (next.has(id)) next.delete(id);
+                      else next.add(id);
+                      return next;
+                    });
+                  };
+
+                  const renderUserRow = (u) => (
+                    <div key={u.id} className="flex items-center justify-between py-2.5 px-3 hover:bg-muted/20 rounded-md group">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold text-sm truncate">{u.name}</div>
+                        <div className="text-[10px] text-muted-foreground truncate">
+                          @{u.username}{u.phone ? ` | 📞 ${u.phone}` : ''}
+                        </div>
+                      </div>
+                      <div className="flex gap-1.5 shrink-0 ml-2">
+                        <Button variant="outline" size="sm" className="text-xs h-8 px-2.5" onClick={() => startEditingUser(u)}>
+                          <Edit3 className="h-3.5 w-3.5 mr-1" />แก้ไข
+                        </Button>
+                        <Button
+                          variant="ghost" size="sm"
+                          className="text-xs h-8 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => setDeleteTarget({ type: 'user', id: u.id, label: `${u.name} (@${u.username})` })}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </div>
-                    <select
-                      className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-w-[200px]"
-                      value={userBankFilter}
-                      onChange={(e) => setUserBankFilter(e.target.value)}
-                    >
-                      <option value="ALL">ดูทุกบัญชีรับเงิน</option>
-                      {accounts.map(acc => (
-                        <option key={acc.id} value={acc.id.toString()}>
-                          {acc.bankName} ({acc.accountName})
-                        </option>
-                      ))}
-                      <option value="UNASSIGNED">ยังไม่ได้กำหนดบัญชี</option>
-                    </select>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="border rounded-md overflow-hidden">
-                    <Table>
-                      <TableHeader className="bg-muted/50">
-                        <TableRow>
-                          <TableHead className="font-bold text-xs">ชื่อ / รายละเอียด</TableHead>
-                          <TableHead className="font-bold text-xs">บทบาท</TableHead>
-                          <TableHead className="font-bold text-xs">บัญชีรับเงิน</TableHead>
-                          <TableHead className="font-bold text-xs text-right">จัดการ</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {users.filter(u => {
-                          if (u.role === 'ADMIN') return false;
-                          if (userBankFilter === 'ALL') return true;
-                          if (userBankFilter === 'UNASSIGNED') return u.assignedAccountId === null;
-                          return u.assignedAccountId?.toString() === userBankFilter;
-                        }).length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={4} className="text-center text-muted-foreground py-12">
-                              ยังไม่พบข้อมูลผู้ใช้งานที่ตรงกับเงื่อนไข
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          users.filter(u => {
-                            if (u.role === 'ADMIN') return false;
-                            if (userBankFilter === 'ALL') return true;
-                            if (userBankFilter === 'UNASSIGNED') return u.assignedAccountId === null;
-                            return u.assignedAccountId?.toString() === userBankFilter;
-                          }).map((u) => (
-                            <TableRow key={u.id} className="hover:bg-muted/10">
-                              <TableCell>
-                                <div className="font-bold text-sm">{u.name}</div>
-                                <div className="text-[10px] text-muted-foreground">
-                                  @{u.username} {u.phone ? `| 📞 ${u.phone}` : ''}
+                  );
+
+                  return (
+                    <>
+                      {/* Header: title + summary + search */}
+                      <Card className="shadow-sm">
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-lg flex items-center gap-2">
+                            <Users className="h-5 w-5 text-primary" />
+                            รายชื่อผู้ใช้งานทั่วไปในระบบ
+                          </CardTitle>
+                          <CardDescription>
+                            แบ่งตามบัญชีรับเงิน — คลิกที่หัวบัญชีเพื่อย่อ/ขยาย
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          {/* Stats row */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                            <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
+                              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">ผู้ใช้ทั้งหมด</div>
+                              <div className="text-2xl font-bold mt-0.5">{allUsers.length}</div>
+                            </div>
+                            <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5">
+                              <div className="text-[10px] uppercase tracking-wider text-emerald-500">กำหนดแล้ว</div>
+                              <div className="text-2xl font-bold mt-0.5 text-emerald-400">{assigned.length}</div>
+                            </div>
+                            <div className={`rounded-lg border px-3 py-2.5 ${unassigned.length > 0 ? 'border-destructive/30 bg-destructive/5' : 'border-border/60 bg-muted/20'}`}>
+                              <div className={`text-[10px] uppercase tracking-wider ${unassigned.length > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>ยังไม่กำหนด</div>
+                              <div className={`text-2xl font-bold mt-0.5 ${unassigned.length > 0 ? 'text-destructive' : ''}`}>{unassigned.length}</div>
+                            </div>
+                            <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
+                              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">บัญชีรับเงิน</div>
+                              <div className="text-2xl font-bold mt-0.5">{accounts.length}</div>
+                            </div>
+                          </div>
+
+                          {/* Search */}
+                          <div className="relative">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                            <input
+                              type="text"
+                              placeholder="ค้นหาชื่อ, username, หรือเบอร์โทร..."
+                              value={userSearch}
+                              onChange={e => setUserSearch(e.target.value)}
+                              className="w-full pl-8 pr-3 h-9 rounded-md border border-input bg-background/50 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            />
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      {/* Per-account panels */}
+                      {accounts.map(acc => {
+                        const accUsers = assigned.filter(u => u.assignedAccountId === acc.id);
+                        const visibleUsers = accUsers.filter(matchUser);
+                        if (q && visibleUsers.length === 0) return null;
+                        const collapsed = collapsedAccounts.has(acc.id);
+                        const monthTotal = monthlyByAccount[acc.id] || 0;
+                        const pct = Math.min(100, (monthTotal / TAX_LIMIT_PER_MONTH) * 100);
+                        const barColor = pct >= 100 ? 'bg-destructive' : pct >= 80 ? 'bg-amber-500' : 'bg-emerald-500';
+
+                        return (
+                          <Card key={acc.id} className="shadow-sm overflow-hidden">
+                            <button
+                              type="button"
+                              onClick={() => toggleCollapsed(acc.id)}
+                              className="w-full text-left hover:bg-muted/20 transition-colors"
+                            >
+                              <CardHeader className="pb-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary shrink-0">
+                                    <CreditCard className="h-4 w-4" />
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="font-bold text-sm">{acc.bankName}</span>
+                                      <span className="text-xs text-muted-foreground font-mono">{acc.accountNumber}</span>
+                                      <Badge variant="outline" className="text-[10px]">{accUsers.length} คน</Badge>
+                                    </div>
+                                    <div className="text-[11px] text-muted-foreground mt-0.5">{acc.accountName}</div>
+                                    {/* Tax progress bar */}
+                                    <div className="mt-1.5 flex items-center gap-2">
+                                      <div className="h-1.5 flex-1 bg-muted rounded-full overflow-hidden">
+                                        <div className={`h-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
+                                      </div>
+                                      <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                                        {monthTotal.toLocaleString('th-TH', { maximumFractionDigits: 0 })} / {TAX_LIMIT_PER_MONTH.toLocaleString('th-TH')} เดือนนี้
+                                      </span>
+                                    </div>
+                                  </div>
+                                  {collapsed
+                                    ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                                    : <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />}
                                 </div>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline" className="bg-indigo-500/5 text-indigo-300 border-indigo-500/10 text-[10px] uppercase font-bold">
-                                  {u.role}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                {u.assignedAccount ? (
-                                  <div className="text-xs">
-                                    <div className="font-semibold text-indigo-400">{u.assignedAccount.bankName}</div>
-                                    <div className="text-[10px] text-muted-foreground font-mono">{u.assignedAccount.accountNumber}</div>
+                              </CardHeader>
+                            </button>
+                            {!collapsed && (
+                              <CardContent className="pt-0">
+                                {visibleUsers.length === 0 ? (
+                                  <div className="text-center text-xs text-muted-foreground py-6 border border-dashed rounded-md">
+                                    {accUsers.length === 0 ? 'ยังไม่มีผู้ใช้ในบัญชีนี้' : 'ไม่พบผู้ใช้ที่ตรงกับการค้นหา'}
                                   </div>
                                 ) : (
-                                  <span className="text-xs text-destructive font-semibold">
-                                    ยังไม่ได้กำหนดบัญชี
-                                  </span>
+                                  <div className="divide-y divide-border/40 -mx-2">
+                                    {visibleUsers.map(renderUserRow)}
+                                  </div>
                                 )}
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <div className="flex gap-1.5 justify-end">
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="text-xs h-8 px-2.5"
-                                    onClick={() => startEditingUser(u)}
-                                  >
-                                    <Edit3 className="h-3.5 w-3.5 mr-1" />
-                                    แก้ไข
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="text-xs h-8 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                    onClick={() => setDeleteTarget({ type: 'user', id: u.id, label: `${u.name} (@${u.username})` })}
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
+                              </CardContent>
+                            )}
+                          </Card>
+                        );
+                      })}
+
+                      {/* Unassigned panel — highlighted */}
+                      {(() => {
+                        const visibleUnassigned = unassigned.filter(matchUser);
+                        if (q && visibleUnassigned.length === 0 && unassigned.length === 0) return null;
+                        const collapsed = collapsedAccounts.has('UNASSIGNED');
+                        return (
+                          <Card className={`shadow-sm overflow-hidden ${unassigned.length > 0 ? 'border-destructive/40' : ''}`}>
+                            <button
+                              type="button"
+                              onClick={() => toggleCollapsed('UNASSIGNED')}
+                              className="w-full text-left hover:bg-muted/20 transition-colors"
+                            >
+                              <CardHeader className="pb-3">
+                                <div className="flex items-center gap-3">
+                                  <div className={`flex h-9 w-9 items-center justify-center rounded-lg shrink-0 ${unassigned.length > 0 ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground'}`}>
+                                    <AlertTriangle className="h-4 w-4" />
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className={`font-bold text-sm ${unassigned.length > 0 ? 'text-destructive' : ''}`}>ยังไม่ได้กำหนดบัญชี</span>
+                                      <Badge variant="outline" className={`text-[10px] ${unassigned.length > 0 ? 'border-destructive/30 text-destructive' : ''}`}>{unassigned.length} คน</Badge>
+                                    </div>
+                                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                                      ผู้ใช้เหล่านี้ยังไม่สามารถโอนเงินได้ — กรุณากำหนดบัญชีรับเงิน
+                                    </div>
+                                  </div>
+                                  {collapsed
+                                    ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                                    : <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />}
                                 </div>
-                              </TableCell>
-                            </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </CardContent>
-              </Card>
+                              </CardHeader>
+                            </button>
+                            {!collapsed && (
+                              <CardContent className="pt-0">
+                                {visibleUnassigned.length === 0 ? (
+                                  <div className="text-center text-xs text-muted-foreground py-6 border border-dashed rounded-md">
+                                    {unassigned.length === 0 ? 'ผู้ใช้ทุกคนถูกกำหนดบัญชีเรียบร้อยแล้ว ✓' : 'ไม่พบผู้ใช้ที่ตรงกับการค้นหา'}
+                                  </div>
+                                ) : (
+                                  <div className="divide-y divide-border/40 -mx-2">
+                                    {visibleUnassigned.map(renderUserRow)}
+                                  </div>
+                                )}
+                              </CardContent>
+                            )}
+                          </Card>
+                        );
+                      })()}
+
+                      {allUsers.length === 0 && (
+                        <Card className="shadow-sm">
+                          <CardContent className="text-center text-muted-foreground py-12 text-sm">
+                            ยังไม่มีผู้ใช้งานในระบบ — สร้างผู้ใช้คนแรกจากฟอร์มด้านซ้าย
+                          </CardContent>
+                        </Card>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
 
             </div>
           </TabsContent>
@@ -1202,31 +1326,243 @@ export default function AdminPage() {
 
               const hasFilters = txFilterUser !== 'ALL' || txFilterStatus !== 'ALL' || txFilterAccount !== 'ALL' || txFilterDateFrom || txFilterDateTo || txSearch;
 
+              // === Per-account current-month aggregation (for tax tracking) ===
+              const now = new Date();
+              const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+              const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+              const monthLabel = now.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' });
+
+              const accountStats = accounts.map(acc => {
+                const accPayments = payments.filter(p => (p.bankAccount?.id || p.bankAccountId) === acc.id);
+                const monthPayments = accPayments.filter(p => {
+                  const d = new Date(p.createdAt);
+                  return d >= monthStart && d < monthEnd;
+                });
+                const monthApproved = monthPayments.filter(p => p.status === 'APPROVED');
+                const monthPending = monthPayments.filter(p => p.status === 'PENDING');
+                const monthRejected = monthPayments.filter(p => p.status === 'REJECTED');
+                const monthApprovedAmount = monthApproved.reduce((s, p) => s + (p.amount || 0), 0);
+                const monthPendingAmount = monthPending.reduce((s, p) => s + (p.amount || 0), 0);
+                const assignedUsers = users.filter(u => u.role === 'USER' && u.assignedAccountId === acc.id);
+                return {
+                  acc,
+                  totalCount: accPayments.length,
+                  monthCount: monthPayments.length,
+                  monthApprovedCount: monthApproved.length,
+                  monthPendingCount: monthPending.length,
+                  monthRejectedCount: monthRejected.length,
+                  monthApprovedAmount,
+                  monthPendingAmount,
+                  assignedUsersCount: assignedUsers.length,
+                };
+              });
+
+              // Sort by approved amount desc (most utilized first)
+              accountStats.sort((a, b) => b.monthApprovedAmount - a.monthApprovedAmount);
+
+              const grandMonthApproved = accountStats.reduce((s, x) => s + x.monthApprovedAmount, 0);
+              const accountsOverLimit = accountStats.filter(x => x.monthApprovedAmount >= TAX_LIMIT_PER_MONTH).length;
+              const accountsNearLimit = accountStats.filter(x => x.monthApprovedAmount >= TAX_LIMIT_PER_MONTH * 0.8 && x.monthApprovedAmount < TAX_LIMIT_PER_MONTH).length;
+
               return (
                 <div className="space-y-6">
-                  {/* Summary Stats */}
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-card border rounded-xl p-4 flex flex-col gap-1">
-                      <span className="text-xs text-muted-foreground">รายการทั้งหมด</span>
-                      <span className="text-2xl font-bold">{filteredTx.length}</span>
-                      <span className="text-[10px] text-muted-foreground">รายการ</span>
-                    </div>
-                    <div className="bg-card border rounded-xl p-4 flex flex-col gap-1">
-                      <span className="text-xs text-muted-foreground">ยอดรวมที่อนุมัติ</span>
-                      <span className="text-2xl font-bold text-emerald-400">{approvedAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
-                      <span className="text-[10px] text-muted-foreground">บาท</span>
-                    </div>
-                    <div className="bg-card border rounded-xl p-4 flex flex-col gap-1">
-                      <span className="text-xs text-muted-foreground">รอดำเนินการ</span>
-                      <span className="text-2xl font-bold text-amber-400">{pendingCount}</span>
-                      <span className="text-[10px] text-muted-foreground">รายการ</span>
-                    </div>
-                    <div className="bg-card border rounded-xl p-4 flex flex-col gap-1">
-                      <span className="text-xs text-muted-foreground">ถูกปฏิเสธ</span>
-                      <span className="text-2xl font-bold text-destructive">{rejectedCount}</span>
-                      <span className="text-[10px] text-muted-foreground">รายการ</span>
-                    </div>
-                  </div>
+                  {/* View mode toggle + Master summary */}
+                  <Card className="shadow-sm">
+                    <CardContent className="pt-6">
+                      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                        <div>
+                          <h3 className="text-base font-bold flex items-center gap-2">
+                            <BarChart3 className="h-4 w-4 text-primary" />
+                            ภาพรวมธุรกรรมเดือน{monthLabel}
+                          </h3>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            ติดตามยอดต่อบัญชีไม่ให้เกิน {TAX_LIMIT_PER_MONTH.toLocaleString('th-TH')} บาท/เดือน (เพื่อภาษี)
+                          </p>
+                        </div>
+
+                        {/* View mode tabs */}
+                        <div className="inline-flex rounded-lg border border-border bg-muted/30 p-1 self-start">
+                          <button
+                            type="button"
+                            onClick={() => setTxViewMode('per-account')}
+                            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                              txViewMode === 'per-account'
+                                ? 'bg-background shadow-sm text-foreground'
+                                : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                          >
+                            แยกตามบัญชี
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setTxViewMode('flat')}
+                            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                              txViewMode === 'flat'
+                                ? 'bg-background shadow-sm text-foreground'
+                                : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                          >
+                            ตารางรวม
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Master stats: 4 boxes */}
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-5">
+                        <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
+                          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">ยอดอนุมัติเดือนนี้</div>
+                          <div className="text-xl font-bold mt-0.5 text-emerald-400">
+                            {grandMonthApproved.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground">บาท (ทุกบัญชีรวมกัน)</div>
+                        </div>
+                        <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
+                          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">บัญชีทั้งหมด</div>
+                          <div className="text-xl font-bold mt-0.5">{accounts.length}</div>
+                          <div className="text-[10px] text-muted-foreground">บัญชีในระบบ</div>
+                        </div>
+                        <div className={`rounded-lg border px-3 py-2.5 ${accountsNearLimit > 0 ? 'border-amber-500/30 bg-amber-500/5' : 'border-border/60 bg-muted/20'}`}>
+                          <div className={`text-[10px] uppercase tracking-wider ${accountsNearLimit > 0 ? 'text-amber-500' : 'text-muted-foreground'}`}>เกือบเต็มลิมิต</div>
+                          <div className={`text-xl font-bold mt-0.5 ${accountsNearLimit > 0 ? 'text-amber-400' : ''}`}>{accountsNearLimit}</div>
+                          <div className="text-[10px] text-muted-foreground">บัญชี (≥ 80%)</div>
+                        </div>
+                        <div className={`rounded-lg border px-3 py-2.5 ${accountsOverLimit > 0 ? 'border-destructive/40 bg-destructive/5' : 'border-border/60 bg-muted/20'}`}>
+                          <div className={`text-[10px] uppercase tracking-wider ${accountsOverLimit > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>เกินลิมิต</div>
+                          <div className={`text-xl font-bold mt-0.5 ${accountsOverLimit > 0 ? 'text-destructive' : ''}`}>{accountsOverLimit}</div>
+                          <div className="text-[10px] text-muted-foreground">บัญชี (≥ 140k)</div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Per-account view */}
+                  {txViewMode === 'per-account' && (
+                    <>
+                      {accountStats.length === 0 ? (
+                        <Card className="shadow-sm">
+                          <CardContent className="text-center py-16 text-muted-foreground">
+                            <CreditCard className="h-8 w-8 mx-auto mb-3 opacity-30" />
+                            <p className="text-sm">ยังไม่มีบัญชีรับเงินในระบบ</p>
+                            <p className="text-[11px] mt-1">เพิ่มบัญชีในแท็บ "จัดการบัญชีธนาคาร"</p>
+                          </CardContent>
+                        </Card>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                          {accountStats.map(({
+                            acc, totalCount, monthCount, monthApprovedCount, monthPendingCount,
+                            monthRejectedCount, monthApprovedAmount, monthPendingAmount, assignedUsersCount,
+                          }) => {
+                            const pct = (monthApprovedAmount / TAX_LIMIT_PER_MONTH) * 100;
+                            const remaining = Math.max(0, TAX_LIMIT_PER_MONTH - monthApprovedAmount);
+                            const overAmount = Math.max(0, monthApprovedAmount - TAX_LIMIT_PER_MONTH);
+                            const status = pct >= 100 ? 'over' : pct >= 80 ? 'warn' : 'ok';
+                            const barColor = status === 'over' ? 'bg-destructive' : status === 'warn' ? 'bg-amber-500' : 'bg-emerald-500';
+                            const cardBorder = status === 'over' ? 'border-destructive/40' : status === 'warn' ? 'border-amber-500/30' : 'border-border/60';
+
+                            return (
+                              <Card key={acc.id} className={`shadow-sm overflow-hidden ${cardBorder}`}>
+                                <CardHeader className="pb-3">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0 flex-1">
+                                      <CardTitle className="text-sm font-bold truncate">{acc.bankName}</CardTitle>
+                                      <div className="font-mono text-xs text-muted-foreground mt-0.5">{acc.accountNumber}</div>
+                                      <div className="text-[11px] text-muted-foreground truncate">{acc.accountName}</div>
+                                    </div>
+                                    {status === 'over' && (
+                                      <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/30 text-[10px] shrink-0">
+                                        เกินลิมิต
+                                      </Badge>
+                                    )}
+                                    {status === 'warn' && (
+                                      <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30 text-[10px] shrink-0">
+                                        ใกล้เต็ม
+                                      </Badge>
+                                    )}
+                                    {status === 'ok' && (
+                                      <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px] shrink-0">
+                                        ปกติ
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                  {/* Big number */}
+                                  <div>
+                                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">ยอดอนุมัติเดือนนี้</div>
+                                    <div className="flex items-baseline gap-1 mt-0.5">
+                                      <span className={`text-2xl font-bold ${status === 'over' ? 'text-destructive' : status === 'warn' ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                        {monthApprovedAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                                      </span>
+                                      <span className="text-xs text-muted-foreground">บาท</span>
+                                    </div>
+                                  </div>
+
+                                  {/* Progress bar */}
+                                  <div className="space-y-1">
+                                    <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                                      <div className={`h-full ${barColor} transition-all`} style={{ width: `${Math.min(100, pct)}%` }} />
+                                    </div>
+                                    <div className="flex justify-between text-[10px] text-muted-foreground">
+                                      <span>{pct.toFixed(1)}% ของลิมิต</span>
+                                      {status === 'over'
+                                        ? <span className="text-destructive font-semibold">เกิน {overAmount.toLocaleString('th-TH', { maximumFractionDigits: 0 })} บาท</span>
+                                        : <span>เหลือ {remaining.toLocaleString('th-TH', { maximumFractionDigits: 0 })} บาท</span>}
+                                    </div>
+                                  </div>
+
+                                  {/* Mini stats grid */}
+                                  <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-border/40">
+                                    <div className="text-center py-1.5 rounded-md bg-amber-500/5">
+                                      <div className="text-base font-bold text-amber-400 leading-none">{monthPendingCount}</div>
+                                      <div className="text-[9px] text-muted-foreground mt-1">รอดำเนินการ</div>
+                                    </div>
+                                    <div className="text-center py-1.5 rounded-md bg-emerald-500/5">
+                                      <div className="text-base font-bold text-emerald-400 leading-none">{monthApprovedCount}</div>
+                                      <div className="text-[9px] text-muted-foreground mt-1">อนุมัติ</div>
+                                    </div>
+                                    <div className="text-center py-1.5 rounded-md bg-destructive/5">
+                                      <div className="text-base font-bold text-destructive leading-none">{monthRejectedCount}</div>
+                                      <div className="text-[9px] text-muted-foreground mt-1">ปฏิเสธ</div>
+                                    </div>
+                                  </div>
+
+                                  {/* Footer info + drill down */}
+                                  <div className="flex items-center justify-between pt-1 text-[11px]">
+                                    <span className="text-muted-foreground">
+                                      <Users className="h-3 w-3 inline mr-1" />{assignedUsersCount} ผู้ใช้
+                                      {monthPendingAmount > 0 && (
+                                        <span className="ml-2 text-amber-500">+{monthPendingAmount.toLocaleString('th-TH', { maximumFractionDigits: 0 })} รออนุมัติ</span>
+                                      )}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setTxFilterAccount(acc.accountNumber);
+                                        setTxFilterStatus('ALL');
+                                        setTxFilterUser('ALL');
+                                        setTxFilterDateFrom('');
+                                        setTxFilterDateTo('');
+                                        setTxSearch('');
+                                        setTxViewMode('flat');
+                                      }}
+                                      className="text-primary hover:underline font-semibold flex items-center gap-1"
+                                    >
+                                      ดูรายละเอียด
+                                      <ChevronDown className="h-3 w-3 -rotate-90" />
+                                    </button>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {/* Flat view (existing detailed table) */}
+                  {txViewMode === 'flat' && (
+                    <>
 
                   {/* Filters */}
                   <Card className="shadow-sm">
@@ -1471,6 +1807,8 @@ export default function AdminPage() {
                         </Table>
                       </CardContent>
                     </Card>
+                  )}
+                    </>
                   )}
                 </div>
               );

@@ -12,8 +12,18 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // For USER role: only return payments from the current calendar month
+    // (privacy / declutter — admin sees full history via /api/admin/payments)
+    const where = { userId: payload.id };
+    if (payload.role !== 'ADMIN') {
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
+      where.createdAt = { gte: monthStart, lt: monthEnd };
+    }
+
     const payments = await prisma.payment.findMany({
-      where: { userId: payload.id },
+      where,
       include: {
         bankAccount: {
           select: {
