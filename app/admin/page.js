@@ -906,7 +906,7 @@ export default function AdminPage() {
                       <option value="ALL">ดูทุกบัญชีรับเงิน</option>
                       {accounts.map(acc => (
                         <option key={acc.id} value={acc.id.toString()}>
-                          {acc.bankName}
+                          {acc.bankName} ({acc.accountName})
                         </option>
                       ))}
                       <option value="UNASSIGNED">ยังไม่ได้กำหนดบัญชี</option>
