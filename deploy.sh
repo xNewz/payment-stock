@@ -40,8 +40,8 @@ npm ci --omit=dev 2>&1 | tail -5
 log "Dependencies installed ✓"
 
 # ── 3. Run Prisma migrations ──────────────────────────────────────────────────
-log "Running Prisma migrations..."
-npx prisma migrate deploy
+log "Updating database schema (db push)..."
+npx prisma db push
 log "Migrations applied ✓"
 
 # ── 4. Generate Prisma client ─────────────────────────────────────────────────
