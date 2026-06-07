@@ -15,6 +15,11 @@ export function WebviewDetector() {
     const url = window.location.href;
     setCurrentUrl(url);
 
+    // ป้องกัน Infinite Loop ถ้า URL มีคำสั่งเด้งออกอยู่แล้ว
+    if (url.includes('openExternalBrowser=1')) {
+      return;
+    }
+
     let detectedApp = '';
 
     if (/Line/i.test(ua)) detectedApp = 'LINE';
@@ -26,6 +31,13 @@ export function WebviewDetector() {
     if (detectedApp) {
       setAppType(detectedApp);
       setIsWebview(true);
+
+      // เตะออกแบบอัตโนมัติ
+      if (detectedApp === 'LINE') {
+        const separator = url.includes('?') ? '&' : '?';
+        const newUrl = url + separator + 'openExternalBrowser=1';
+        window.location.replace(newUrl);
+      }
     }
   }, []);
 
