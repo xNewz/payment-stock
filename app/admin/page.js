@@ -43,7 +43,8 @@ import {
   Zap,
   Link2,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  KeyRound
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
 

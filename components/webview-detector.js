@@ -15,11 +15,6 @@ export function WebviewDetector() {
     const url = window.location.href;
     setCurrentUrl(url);
 
-    // Skip if already trying to open external (LINE trick)
-    if (url.includes('openExternalBrowser=1')) {
-      return;
-    }
-
     let detectedApp = '';
 
     if (/Line/i.test(ua)) detectedApp = 'LINE';
@@ -31,12 +26,6 @@ export function WebviewDetector() {
     if (detectedApp) {
       setAppType(detectedApp);
       setIsWebview(true);
-
-      // Auto-redirect for LINE
-      if (detectedApp === 'LINE') {
-        const separator = url.includes('?') ? '&' : '?';
-        window.location.href = url + separator + 'openExternalBrowser=1';
-      }
     }
   }, []);
 
