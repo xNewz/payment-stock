@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
+import { promises as fs } from 'fs';
+import path from 'path';
 import prisma from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
 
@@ -82,7 +84,7 @@ export async function POST(request) {
       );
     }
 
-    const hashedPassword = bcrypt.hashSync(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     const newUser = await prisma.user.create({
       data: {
@@ -153,6 +155,20 @@ export async function PUT(request) {
       );
     }
 
+    // Prevent changing role to USER if this is the last ADMIN
+    if (role === 'USER') {
+      const targetUser = await prisma.user.findUnique({ where: { id: userId } });
+      if (targetUser && targetUser.role === 'ADMIN') {
+        const adminCount = await prisma.user.count({ where: { role: 'ADMIN' } });
+        if (adminCount <= 1) {
+          return NextResponse.json(
+            { error: 'ต้องมีผู้ดูแลระบบอย่างน้อย 1 คนในระบบ' },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
     const dataToUpdate = {
       username: cleanUsername,
       phone: cleanPhone,
@@ -162,7 +178,7 @@ export async function PUT(request) {
     };
 
     if (password && password.trim() !== '') {
-      dataToUpdate.password = bcrypt.hashSync(password.trim(), 10);
+      dataToUpdate.password = await bcrypt.hash(password.trim(), 10);
     }
 
     const updatedUser = await prisma.user.update({
@@ -207,12 +223,38 @@ export async function DELETE(request) {
 
     const userId = parseInt(id, 10);
 
-    // Prevent deleting the currently logged-in admin
+    // Prevent deleting the currently logged-in admin (already there)
     if (userId === admin.id) {
       return NextResponse.json(
         { error: 'ไม่สามารถลบบัญชีของตัวเองได้' },
         { status: 400 }
       );
+    }
+
+    // Prevent deleting the last admin if it's not themselves (though they can't delete themselves anyway)
+    const targetUser = await prisma.user.findUnique({ where: { id: userId } });
+    if (targetUser && targetUser.role === 'ADMIN') {
+      const adminCount = await prisma.user.count({ where: { role: 'ADMIN' } });
+      if (adminCount <= 1) {
+        return NextResponse.json(
+          { error: 'ต้องมีผู้ดูแลระบบอย่างน้อย 1 คนในระบบ' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Delete user's slip files
+    const userPayments = await prisma.payment.findMany({ where: { userId } });
+    for (const payment of userPayments) {
+      if (payment.slipUrl) {
+        try {
+          const filename = payment.slipUrl.split('/').pop();
+          const filePath = path.join(process.cwd(), 'storage', 'uploads', filename);
+          await fs.unlink(filePath);
+        } catch (e) {
+          console.error('Failed to delete slip file:', e);
+        }
+      }
     }
 
     // Delete user's payments first (cascade)

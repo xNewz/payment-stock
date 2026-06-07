@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { randomUUID } from 'crypto';
 import prisma from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
 
@@ -83,16 +84,37 @@ export async function POST(request) {
       );
     }
 
+    // Verify user assignment
+    const user = await prisma.user.findUnique({ where: { id: payload.id } });
+    if (user.assignedAccountId && user.assignedAccountId !== bankAccountId) {
+      return NextResponse.json(
+        { error: 'คุณไม่ได้รับอนุญาตให้โอนเงินเข้าบัญชีนี้' },
+        { status: 403 }
+      );
+    }
+
+    // Validate file type and size
+    const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+    const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+    if (file.size > MAX_SIZE) {
+      return NextResponse.json({ error: 'ขนาดไฟล์เกิน 5MB' }, { status: 413 });
+    }
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      return NextResponse.json({ error: 'อนุญาตเฉพาะไฟล์รูปภาพ (JPEG, PNG, WEBP)' }, { status: 415 });
+    }
+
     // Read file data
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    // Ensure upload directory exists in public/uploads
-    const uploadDir = path.join(process.cwd(), 'public', 'uploads');
+    // Ensure upload directory exists in storage/uploads
+    const uploadDir = path.join(process.cwd(), 'storage', 'uploads');
     await fs.mkdir(uploadDir, { recursive: true });
 
-    // Sanitize filename to avoid paths traversal issues
-    const sanitizedFilename = `${payload.id}_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+    // Sanitize filename to avoid paths traversal issues and use UUID for uniqueness
+    const ext = path.extname(file.name).toLowerCase();
+    const sanitizedFilename = `${payload.id}_${randomUUID()}${ext}`;
     const filePath = path.join(uploadDir, sanitizedFilename);
     await fs.writeFile(filePath, buffer);
 

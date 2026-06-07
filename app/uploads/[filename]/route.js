@@ -1,9 +1,16 @@
 import { NextResponse } from 'next/server';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { verifyAuth } from '@/lib/auth';
+import prisma from '@/lib/prisma';
 
 export async function GET(request, { params }) {
   try {
+    const payload = await verifyAuth();
+    if (!payload) {
+      return new NextResponse('Unauthorized', { status: 401 });
+    }
+
     const { filename } = await params;
     
     // Security check to prevent directory traversal
@@ -11,7 +18,18 @@ export async function GET(request, { params }) {
       return new NextResponse('Invalid filename', { status: 400 });
     }
 
-    const filePath = path.join(process.cwd(), 'public', 'uploads', filename);
+    // Check authorization: Admin or Owner
+    if (payload.role !== 'ADMIN') {
+      const payment = await prisma.payment.findFirst({
+        where: { slipUrl: `/uploads/${filename}` },
+        select: { userId: true },
+      });
+      if (!payment || payment.userId !== payload.id) {
+        return new NextResponse('Forbidden', { status: 403 });
+      }
+    }
+
+    const filePath = path.join(process.cwd(), 'storage', 'uploads', filename);
 
     try {
       const fileBuffer = await fs.readFile(filePath);

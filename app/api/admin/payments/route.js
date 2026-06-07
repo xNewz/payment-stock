@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { promises as fs } from 'fs';
+import path from 'path';
 import prisma from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
 
@@ -120,9 +122,24 @@ export async function DELETE(request) {
       );
     }
 
+    const payment = await prisma.payment.findUnique({ where: { id: parseInt(id, 10) } });
+    if (!payment) {
+      return NextResponse.json({ error: 'Payment not found' }, { status: 404 });
+    }
+
     await prisma.payment.delete({
       where: { id: parseInt(id, 10) },
     });
+
+    if (payment.slipUrl) {
+      try {
+        const filename = payment.slipUrl.split('/').pop();
+        const filePath = path.join(process.cwd(), 'storage', 'uploads', filename);
+        await fs.unlink(filePath);
+      } catch (e) {
+        console.error('Failed to delete slip file:', e);
+      }
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

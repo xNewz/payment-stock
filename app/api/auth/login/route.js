@@ -9,14 +9,32 @@ function isPhoneNumber(input) {
   return /^0\d{9}$/.test(input.replace(/[-\s]/g, ''));
 }
 
+const rateLimitMap = new Map();
+const RATE_LIMIT = 5;
+const RATE_LIMIT_WINDOW = 15 * 60 * 1000; // 15 mins
+
 export async function POST(request) {
   try {
+    // Check Rate Limit
+    const ip = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
+    const now = Date.now();
+    const limitEntry = rateLimitMap.get(ip) || { count: 0, resetAt: now + RATE_LIMIT_WINDOW };
+    if (now > limitEntry.resetAt) {
+      limitEntry.count = 0;
+      limitEntry.resetAt = now + RATE_LIMIT_WINDOW;
+    }
+    if (limitEntry.count >= RATE_LIMIT) {
+      return NextResponse.json({ error: 'เข้าสู่ระบบผิดพลาดหลายครั้งเกินไป กรุณารอสักครู่' }, { status: 429 });
+    }
+    limitEntry.count += 1;
+    rateLimitMap.set(ip, limitEntry);
+
     const { username, password } = await request.json();
 
     if (!username) {
       return NextResponse.json(
-        { error: 'กรุณากรอกชื่อผู้ใช้งาน หรือเบอร์โทรศัพท์' },
-        { status: 400 }
+        { error: 'ข้อมูลเข้าสู่ระบบไม่ถูกต้อง' },
+        { status: 401 }
       );
     }
 
@@ -36,7 +54,7 @@ export async function POST(request) {
     if (!user) {
       console.log(`[Login API] User "${cleanUsername}" not found`);
       return NextResponse.json(
-        { error: 'ไม่พบผู้ใช้งานในระบบ กรุณาติดต่อผู้ดูแล' },
+        { error: 'ข้อมูลเข้าสู่ระบบไม่ถูกต้อง' },
         { status: 401 }
       );
     }
@@ -46,15 +64,15 @@ export async function POST(request) {
       // Admin: always requires password
       if (!password) {
         return NextResponse.json(
-          { error: 'ผู้ดูแลระบบต้องใส่รหัสผ่าน' },
-          { status: 400 }
+          { error: 'ข้อมูลเข้าสู่ระบบไม่ถูกต้อง' },
+          { status: 401 }
         );
       }
-      const passwordMatch = bcrypt.compareSync(password.trim(), user.password);
+      const passwordMatch = await bcrypt.compare(password.trim(), user.password);
       if (!passwordMatch) {
         console.log(`[Login API] Password mismatch for admin "${cleanUsername}"`);
         return NextResponse.json(
-          { error: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' },
+          { error: 'ข้อมูลเข้าสู่ระบบไม่ถูกต้อง' },
           { status: 401 }
         );
       }
@@ -63,7 +81,7 @@ export async function POST(request) {
       if (!lookupByPhone) {
         // If they typed a username (not phone) for a USER account, reject
         return NextResponse.json(
-          { error: 'ผู้ใช้งานทั่วไปต้องเข้าสู่ระบบด้วยเบอร์โทรศัพท์' },
+          { error: 'ข้อมูลเข้าสู่ระบบไม่ถูกต้อง' },
           { status: 401 }
         );
       }

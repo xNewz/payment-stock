@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash } from 'crypto';
 import prisma from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
 
@@ -22,11 +22,11 @@ export async function GET() {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Mask token — show only prefix + last 8 chars
+    // Mask token — show generic mask since we only store the hash
     const masked = tokens.map((t) => ({
       id:         t.id,
       name:       t.name,
-      tokenMask:  t.token.slice(0, 6) + '••••••••••••' + t.token.slice(-8),
+      tokenMask:  'stv_••••••••••••',
       createdAt:  t.createdAt,
       lastUsedAt: t.lastUsedAt,
       expiresAt:  t.expiresAt,
@@ -58,6 +58,7 @@ export async function POST(request) {
 
     // Generate secure token: stv_ prefix + 48 hex chars = 52 chars total
     const rawToken = 'stv_' + randomBytes(24).toString('hex');
+    const hashedToken = createHash('sha256').update(rawToken).digest('hex');
 
     let expiresAt = null;
     if (expiresInDays && Number(expiresInDays) > 0) {
@@ -68,7 +69,7 @@ export async function POST(request) {
     const created = await prisma.apiToken.create({
       data: {
         name:      name.trim(),
-        token:     rawToken,
+        token:     hashedToken,
         expiresAt,
       },
     });

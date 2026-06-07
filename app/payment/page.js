@@ -128,6 +128,9 @@ export default function PaymentPage() {
       setError('กรุณาอัปโหลดไฟล์รูปภาพเท่านั้น');
       return;
     }
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
     setFile(selectedFile);
     setPreviewUrl(URL.createObjectURL(selectedFile));
   };
@@ -136,6 +139,8 @@ export default function PaymentPage() {
     e.preventDefault();
     setError('');
     setSuccessMsg('');
+
+    if (submitting) return;
 
     if (!amount || parseFloat(amount) <= 0) {
       setError('กรุณากรอกจำนวนเงินให้ถูกต้อง');
@@ -413,6 +418,41 @@ export default function PaymentPage() {
                   <p className="text-xs text-muted-foreground mt-1 max-w-[280px]">
                     กรุณาติดต่อผู้ดูแลระบบเพื่อกำหนดบัญชีธนาคารรับชำระเงินที่ต้องการให้คุณโอน
                   </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Payment History */}
+          <Card className="shadow-md border-border/60">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-lg font-semibold">ประวัติการชำระเงิน</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {payments.length === 0 ? (
+                <div className="text-center py-6 text-muted-foreground text-sm">
+                  ยังไม่มีประวัติการชำระเงิน
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {payments.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between p-4 border rounded-lg">
+                      <div>
+                        <p className="font-semibold">{p.amount.toLocaleString('th-TH')} บาท</p>
+                        <p className="text-xs text-muted-foreground">{new Date(p.createdAt).toLocaleString('th-TH')}</p>
+                      </div>
+                      <div>
+                        {p.status === 'PENDING' && <Badge variant="outline" className="text-yellow-600 border-yellow-600">รอดำเนินการ</Badge>}
+                        {p.status === 'APPROVED' && <Badge variant="outline" className="text-green-600 border-green-600">อนุมัติแล้ว</Badge>}
+                        {p.status === 'REJECTED' && (
+                          <div className="flex flex-col items-end">
+                            <Badge variant="outline" className="text-red-600 border-red-600">ปฏิเสธ</Badge>
+                            {p.rejectedReason && <span className="text-[10px] text-red-500 mt-1 max-w-[120px] text-right truncate" title={p.rejectedReason}>{p.rejectedReason}</span>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </CardContent>

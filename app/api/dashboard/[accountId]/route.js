@@ -97,23 +97,27 @@ export async function GET(request, { params }) {
     ]);
 
     // Aggregate stats (across ALL matching records, not just current page)
-    const allForStats = await prisma.payment.findMany({
+    const statsResult = await prisma.payment.groupBy({
+      by: ['status'],
       where,
-      select: { amount: true, status: true },
+      _count: { _all: true },
+      _sum: { amount: true },
     });
 
-    const approved = allForStats.filter((p) => p.status === 'APPROVED');
-    const pending  = allForStats.filter((p) => p.status === 'PENDING');
-    const rejected = allForStats.filter((p) => p.status === 'REJECTED');
+    const approved = statsResult.find((r) => r.status === 'APPROVED') || { _count: { _all: 0 }, _sum: { amount: 0 } };
+    const pending  = statsResult.find((r) => r.status === 'PENDING') || { _count: { _all: 0 }, _sum: { amount: 0 } };
+    const rejected = statsResult.find((r) => r.status === 'REJECTED') || { _count: { _all: 0 }, _sum: { amount: 0 } };
+
+    const totalAllAmount = (approved._sum.amount || 0) + (pending._sum.amount || 0) + (rejected._sum.amount || 0);
 
     const stats = {
       totalCount,
-      approvedCount:       approved.length,
-      pendingCount:        pending.length,
-      rejectedCount:       rejected.length,
-      totalApprovedAmount: approved.reduce((s, p) => s + p.amount, 0),
-      totalPendingAmount:  pending.reduce((s, p) => s + p.amount, 0),
-      totalAllAmount:      allForStats.reduce((s, p) => s + p.amount, 0),
+      approvedCount:       approved._count._all,
+      pendingCount:        pending._count._all,
+      rejectedCount:       rejected._count._all,
+      totalApprovedAmount: approved._sum.amount || 0,
+      totalPendingAmount:  pending._sum.amount || 0,
+      totalAllAmount:      totalAllAmount,
     };
 
     return NextResponse.json({
