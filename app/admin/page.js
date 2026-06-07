@@ -36,7 +36,14 @@ import {
   Filter,
   SlidersHorizontal,
   TrendingUp,
-  RotateCcw
+  RotateCcw,
+  Code2,
+  Copy,
+  CheckCheck,
+  Zap,
+  Link2,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
 
@@ -109,6 +116,17 @@ export default function AdminPage() {
   const [txFilterDateTo, setTxFilterDateTo] = useState('');
   const [txSearch, setTxSearch] = useState('');
 
+  // API tab state
+  const [copiedKey, setCopiedKey] = useState('');
+  const [expandedAccount, setExpandedAccount] = useState(null);
+  // Token management
+  const [apiTokens, setApiTokens] = useState([]);
+  const [newTokenName, setNewTokenName] = useState('');
+  const [newTokenExpiry, setNewTokenExpiry] = useState('');
+  const [tokenSubmitting, setTokenSubmitting] = useState(false);
+  const [justCreatedToken, setJustCreatedToken] = useState(null); // full token shown once
+  const [tokenError, setTokenError] = useState('');
+
   // Delete confirmation modal state
   const [deleteTarget, setDeleteTarget] = useState(null); // { type: 'payment'|'user'|'account', id, label }
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
@@ -170,6 +188,18 @@ export default function AdminPage() {
     }
   };
 
+  const fetchApiTokens = async () => {
+    try {
+      const res = await fetch('/api/admin/api-tokens');
+      if (res.ok) {
+        const data = await res.json();
+        setApiTokens(data.tokens);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
     const init = async () => {
       setLoading(true);
@@ -177,6 +207,7 @@ export default function AdminPage() {
       await fetchPayments();
       await fetchUsers();
       await fetchAccounts();
+      await fetchApiTokens();
       setLoading(false);
     };
     init();
@@ -382,7 +413,7 @@ export default function AdminPage() {
 
     const endpointMap = {
       payment: '/api/admin/payments',
-      user: '/api/admin/users',
+      user:    '/api/admin/users',
       account: '/api/admin/accounts',
     };
 
@@ -396,7 +427,6 @@ export default function AdminPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'ลบข้อมูลไม่สำเร็จ');
 
-      // Refresh appropriate list
       if (deleteTarget.type === 'payment') fetchPayments();
       else if (deleteTarget.type === 'user') { fetchUsers(); fetchPayments(); }
       else if (deleteTarget.type === 'account') { fetchAccounts(); fetchUsers(); }
@@ -406,6 +436,49 @@ export default function AdminPage() {
       alert(err.message);
     } finally {
       setDeleteSubmitting(false);
+    }
+  };
+
+  // API Token handlers
+  const handleCreateToken = async (e) => {
+    e.preventDefault();
+    setTokenError('');
+    setJustCreatedToken(null);
+    setTokenSubmitting(true);
+    try {
+      const res = await fetch('/api/admin/api-tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newTokenName,
+          expiresInDays: newTokenExpiry ? parseInt(newTokenExpiry, 10) : null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'สร้าง token ไม่สำเร็จ');
+      setJustCreatedToken(data);
+      setNewTokenName('');
+      setNewTokenExpiry('');
+      fetchApiTokens();
+    } catch (err) {
+      setTokenError(err.message);
+    } finally {
+      setTokenSubmitting(false);
+    }
+  };
+
+  const handleRevokeToken = async (id, name) => {
+    if (!confirm(`ยืนยันยกเลิก token "${name}" ใช่หรือไม่?`)) return;
+    try {
+      const res = await fetch('/api/admin/api-tokens', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) throw new Error('ยกเลิกไม่สำเร็จ');
+      fetchApiTokens();
+    } catch (err) {
+      alert(err.message);
     }
   };
 
@@ -530,6 +603,9 @@ export default function AdminPage() {
               </TabsTrigger>
               <TabsTrigger value="accounts" className="rounded-md px-4 py-2 text-sm font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
                 จัดการบัญชีธนาคาร
+              </TabsTrigger>
+              <TabsTrigger value="apimanage" className="rounded-md px-4 py-2 text-sm font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
+                จัดการ API
               </TabsTrigger>
             </TabsList>
           </div>
@@ -960,6 +1036,7 @@ export default function AdminPage() {
                         disabled={accountSubmitting}
                       >
                         <option value="PROMPTPAY" className="bg-card">สร้าง QR PromptPay อัตโนมัติ (Dynamic/Static)</option>
+                        <option value="BANK_TRANSFER" className="bg-card">โอนเข้าเลขบัญชีธนาคาร (ไม่ใช้ QR)</option>
                       </select>
                     </div>
 
@@ -1359,6 +1436,349 @@ export default function AdminPage() {
             })()}
           </TabsContent>
 
+          {/* Tab 5: API Management */}
+          <TabsContent value="apimanage">
+            {(() => {
+              const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+
+              const copyToClipboard = (text, key) => {
+                navigator.clipboard.writeText(text).then(() => {
+                  setCopiedKey(key);
+                  setTimeout(() => setCopiedKey(''), 2000);
+                });
+              };
+
+              const CopyBtn = ({ text, id }) => (
+                <button
+                  onClick={() => copyToClipboard(text, id)}
+                  className="flex items-center gap-1 text-xs px-2 py-1 rounded border border-border hover:bg-muted/50 transition-colors shrink-0"
+                  title="คัดลอก URL"
+                >
+                  {copiedKey === id
+                    ? <><CheckCheck className="h-3 w-3 text-emerald-400" /><span className="text-emerald-400">คัดลอกแล้ว</span></>
+                    : <><Copy className="h-3 w-3" /><span>คัดลอก</span></>}
+                </button>
+              );
+
+              const queryParams = [
+                { name: 'status',   example: 'APPROVED', desc: 'กรองสถานะ: PENDING | APPROVED | REJECTED' },
+                { name: 'dateFrom', example: '2025-01-01', desc: 'ตั้งแต่วันที่ (YYYY-MM-DD)' },
+                { name: 'dateTo',   example: '2025-12-31', desc: 'ถึงวันที่ (YYYY-MM-DD)' },
+                { name: 'username', example: 'user01',     desc: 'กรองตาม username ของผู้ใช้' },
+                { name: 'page',     example: '1',          desc: 'หน้าที่ (pagination, เริ่มที่ 1)' },
+                { name: 'limit',    example: '50',         desc: 'จำนวนต่อหน้า (1-200, ค่าเริ่มต้น: 50)' },
+              ];
+
+              return (
+                <div className="space-y-6">
+                  {/* Header Banner */}
+                  <div className="rounded-xl border bg-gradient-to-br from-primary/5 via-indigo-500/5 to-purple-500/5 p-5 flex flex-col sm:flex-row gap-4 items-start">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <Code2 className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h2 className="font-bold text-base">จัดการ Dashboard API</h2>
+                      <p className="text-sm text-muted-foreground mt-0.5">
+                        เรียก API จาก web ภายนอกโดยใส่ <code className="bg-muted px-1 py-0.5 rounded text-xs">Authorization: Bearer &lt;token&gt;</code> ใน header — สร้าง token ได้ด้านล่าง
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Token Management Card */}
+                  <Card className="shadow-sm border-primary/20">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Zap className="h-4 w-4 text-primary" />
+                        API Tokens
+                        <span className="ml-auto text-[10px] font-normal text-muted-foreground">{apiTokens.length} tokenในระบบ</span>
+                      </CardTitle>
+                      <CardDescription>สร้าง token เพื่อให้ web หรือแอปภายนอกเรียก Dashboard API ได้</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-5">
+
+                      {/* Create form */}
+                      <form onSubmit={handleCreateToken} className="flex flex-col sm:flex-row gap-3">
+                        <input
+                          type="text"
+                          placeholder="ชื่อ token เช่น Dashboard App, Analytics Site"
+                          value={newTokenName}
+                          onChange={e => setNewTokenName(e.target.value)}
+                          required
+                          className="flex-1 h-9 rounded-md border border-input bg-background/50 px-3 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        />
+                        <select
+                          value={newTokenExpiry}
+                          onChange={e => setNewTokenExpiry(e.target.value)}
+                          className="h-9 rounded-md border border-input bg-background/50 px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        >
+                          <option value="">ไม่มีวันหมดอายุ</option>
+                          <option value="30">30 วัน</option>
+                          <option value="90">90 วัน</option>
+                          <option value="180">180 วัน</option>
+                          <option value="365">1 ปี</option>
+                        </select>
+                        <Button type="submit" disabled={tokenSubmitting} className="h-9 gap-1.5 shrink-0">
+                          <Zap className="h-3.5 w-3.5" />
+                          {tokenSubmitting ? 'กำลังสร้าง...' : 'สร้าง Token'}
+                        </Button>
+                      </form>
+
+                      {tokenError && (
+                        <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">{tokenError}</div>
+                      )}
+
+                      {/* Newly created token — show once */}
+                      {justCreatedToken && (
+                        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <CheckCheck className="h-4 w-4 text-emerald-400" />
+                            <span className="text-sm font-bold text-emerald-400">สร้าง Token สำเร็จ — คัดลอกเก็บไว้ Token จะไม่ถูกแสดงอีก</span>
+                          </div>
+                          <div className="flex items-center gap-2 rounded-md bg-background border border-border px-3 py-2">
+                            <code className="font-mono text-xs text-amber-400 flex-1 break-all">{justCreatedToken.token}</code>
+                            <CopyBtn text={justCreatedToken.token} id="new-token" />
+                          </div>
+                          <p className="text-[11px] text-muted-foreground">
+                            วิธีใช้: <code className="bg-muted px-1 rounded">Authorization: Bearer {justCreatedToken.token}</code>
+                          </p>
+                          <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setJustCreatedToken(null)}>ปิดการแสดง</Button>
+                        </div>
+                      )}
+
+                      {/* Token list */}
+                      {apiTokens.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground text-sm border border-dashed rounded-lg">
+                          ยังไม่มี API Token — สร้างด้านบน
+                        </div>
+                      ) : (
+                        <div className="rounded-md border border-border overflow-hidden">
+                          <table className="w-full text-xs">
+                            <thead className="bg-muted/50">
+                              <tr>
+                                <th className="text-left px-3 py-2 font-bold">ชื่อ</th>
+                                <th className="text-left px-3 py-2 font-bold">Token</th>
+                                <th className="text-left px-3 py-2 font-bold">สร้างเมื่อ</th>
+                                <th className="text-left px-3 py-2 font-bold">ใช้ล่าสุด</th>
+                                <th className="text-left px-3 py-2 font-bold">วันหมด</th>
+                                <th className="px-3 py-2"></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {apiTokens.map((t, i) => (
+                                <tr key={t.id} className={`${i % 2 === 0 ? 'bg-background' : 'bg-muted/20'} ${t.isExpired ? 'opacity-50' : ''}`}>
+                                  <td className="px-3 py-2 font-semibold">
+                                    {t.name}
+                                    {t.isExpired && <span className="ml-1.5 text-[10px] text-destructive font-bold">(EXPIRED)</span>}
+                                  </td>
+                                  <td className="px-3 py-2 font-mono text-muted-foreground">{t.tokenMask}</td>
+                                  <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{new Date(t.createdAt).toLocaleDateString('th-TH')}</td>
+                                  <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{t.lastUsedAt ? new Date(t.lastUsedAt).toLocaleDateString('th-TH') : 'ยังไม่เคยใช้'}</td>
+                                  <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{t.expiresAt ? new Date(t.expiresAt).toLocaleDateString('th-TH') : 'ไม่หมดอายุ'}</td>
+                                  <td className="px-3 py-2 text-right">
+                                    <button
+                                      onClick={() => handleRevokeToken(t.id, t.name)}
+                                      className="text-destructive hover:text-destructive/80 transition-colors"
+                                      title="ยกเลิก Token"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Endpoint 1: Summary */}
+                  <Card className="shadow-sm">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded px-1.5 py-0.5">GET</span>
+                          <CardTitle className="text-sm font-mono">/api/dashboard</CardTitle>
+                        </div>
+                        <div className="flex gap-2">
+                          <CopyBtn text={`${baseUrl}/api/dashboard`} id="idx" />
+                          <a
+                            href="/api/dashboard"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center gap-1 text-xs px-2 py-1 rounded border border-border hover:bg-muted/50 transition-colors"
+                          >
+                            <Zap className="h-3 w-3" />
+                            <span>ทดสอบ</span>
+                          </a>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-muted-foreground mb-3">สรุปภาพรวมทุกบัญชีธนาคาร พร้อม stats และ link ไปยัง endpoint แต่ละบัญชี</p>
+                      <div className="rounded-md bg-muted/30 border border-border p-3 font-mono text-xs text-muted-foreground break-all">
+                        {baseUrl}/api/dashboard
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Endpoint 2: Per-account (dynamic) */}
+                  <Card className="shadow-sm">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded px-1.5 py-0.5">GET</span>
+                        <CardTitle className="text-sm font-mono">/api/dashboard/<span className="text-primary">[accountId]</span></CardTitle>
+                      </div>
+                      <CardDescription className="mt-1">
+                        รายการธุรกรรมละเอียดของแต่ละบัญชี — <strong>Dynamic:</strong> เมื่อเพิ่มบัญชีใหม่ endpoint ใหม่จะถูกสร้างอัตโนมัติเลย
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-5">
+
+                      {/* Query params table */}
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Query Parameters</p>
+                        <div className="rounded-md border border-border overflow-hidden">
+                          <table className="w-full text-xs">
+                            <thead className="bg-muted/50">
+                              <tr>
+                                <th className="text-left px-3 py-2 font-bold">Param</th>
+                                <th className="text-left px-3 py-2 font-bold">ตัวอย่าง</th>
+                                <th className="text-left px-3 py-2 font-bold">คำอธิบาย</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {queryParams.map((p, i) => (
+                                <tr key={p.name} className={i % 2 === 0 ? 'bg-background' : 'bg-muted/20'}>
+                                  <td className="px-3 py-2 font-mono text-primary font-semibold">{p.name}</td>
+                                  <td className="px-3 py-2 font-mono text-amber-400">{p.example}</td>
+                                  <td className="px-3 py-2 text-muted-foreground">{p.desc}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* Per-account endpoint list */}
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                          Endpoints ที่ใช้ได้ไนศนี้ ({accounts.length} บัญชี)
+                        </p>
+                        {accounts.length === 0 ? (
+                          <div className="text-center py-8 text-muted-foreground text-sm border border-dashed rounded-lg">
+                            ยังไม่มีบัญชีธนาคาร — เพิ่มบัญชีในแท็บ จัดการบัญชีธนาคาร
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {accounts.map((acc) => {
+                              const url = `${baseUrl}/api/dashboard/${acc.id}`;
+                              const isExpanded = expandedAccount === acc.id;
+                              return (
+                                <div key={acc.id} className="rounded-lg border border-border overflow-hidden">
+                                  {/* Account header row */}
+                                  <div className="flex items-center gap-3 px-4 py-3 bg-muted/20">
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      <span className="text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded px-1.5 py-0.5">GET</span>
+                                      <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
+                                    </div>
+                                    <code className="font-mono text-xs text-foreground flex-1 min-w-0 truncate">
+                                      /api/dashboard/<span className="text-primary font-bold">{acc.id}</span>
+                                    </code>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      <span className="hidden sm:block text-[10px] text-muted-foreground">{acc.bankName} – {acc.accountNumber}</span>
+                                      <CopyBtn text={url} id={`acc-${acc.id}`} />
+                                      <a
+                                        href={`/api/dashboard/${acc.id}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="flex items-center gap-1 text-xs px-2 py-1 rounded border border-border hover:bg-muted/50 transition-colors"
+                                      >
+                                        <Zap className="h-3 w-3" />
+                                        <span className="hidden sm:inline">ทดสอบ</span>
+                                      </a>
+                                      <button
+                                        onClick={() => setExpandedAccount(isExpanded ? null : acc.id)}
+                                        className="flex items-center gap-1 text-xs px-2 py-1 rounded border border-border hover:bg-muted/50 transition-colors"
+                                      >
+                                        {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Expanded: URL builder */}
+                                  {isExpanded && (
+                                    <div className="px-4 py-3 border-t border-border space-y-3 bg-background/50">
+                                      <p className="text-xs text-muted-foreground font-semibold">ตัวอย่าง URL พร้อม Query Params:</p>
+                                      <div className="space-y-1.5">
+                                        {[
+                                          { label: 'เฉพาะอนุมัติ', q: '?status=APPROVED' },
+                                          { label: 'รอดำเนินการ', q: '?status=PENDING' },
+                                          { label: 'ช่วงวันที่', q: '?dateFrom=2025-01-01&dateTo=2025-12-31' },
+                                          { label: 'หน้า 2', q: '?page=2&limit=20' },
+                                        ].map(({ label, q }) => {
+                                          const fullUrl = `${baseUrl}/api/dashboard/${acc.id}${q}`;
+                                          return (
+                                            <div key={q} className="flex items-center gap-2 rounded-md bg-muted/30 border border-border px-3 py-1.5">
+                                              <span className="text-[10px] text-muted-foreground shrink-0 w-28">{label}</span>
+                                              <code className="font-mono text-[11px] text-amber-400 flex-1 min-w-0 truncate">{q}</code>
+                                              <CopyBtn text={fullUrl} id={`acc-${acc.id}-${q}`} />
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                      <div className="flex items-center gap-2 pt-1">
+                                        <span className="text-xs text-muted-foreground">บัญชี:</span>
+                                        <span className="text-xs font-semibold">{acc.bankName} – {acc.accountNumber}</span>
+                                        <span className="text-xs text-muted-foreground">({acc.accountName})</span>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Response structure */}
+                  <Card className="shadow-sm">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Code2 className="h-4 w-4 text-primary" />
+                        โครงสร้าง Response
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <pre className="rounded-md bg-muted/30 border border-border p-4 text-xs font-mono overflow-x-auto text-muted-foreground leading-relaxed">{`{
+  "generatedAt": "2025-06-07T12:00:00.000Z",
+  "account": { "id": 1, "bankName": "...", "accountNumber": "..." },
+  "filters":   { "status": "APPROVED", "dateFrom": null, ... },
+  "stats": {
+    "totalCount":          50,
+    "approvedCount":       40,
+    "pendingCount":         5,
+    "rejectedCount":        5,
+    "totalApprovedAmount": 85000
+  },
+  "pagination": { "page": 1, "limit": 50, "totalPages": 1, "hasNextPage": false },
+  "transactions": [
+    {
+      "id": 99, "amount": 1500, "status": "APPROVED",
+      "slipUrl": "https://...", "createdAt": "...",
+      "user": { "id": 3, "username": "user01", "name": "..." }
+    }
+  ]
+}`}</pre>
+                    </CardContent>
+                  </Card>
+                </div>
+              );
+            })()}
+          </TabsContent>
+
         </Tabs>
       </main>
 
@@ -1625,7 +2045,7 @@ export default function AdminPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="edit-qr-type">ประเภท QR Code สำหรับจ่ายเงิน</Label>
+                <Label htmlFor="edit-qr-type">ประเภทการจ่ายเงิน</Label>
                 <select 
                   className="flex h-9 w-full rounded-md border border-input bg-background/50 px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                   id="edit-qr-type"
@@ -1634,6 +2054,7 @@ export default function AdminPage() {
                   disabled={editAccountSubmitting}
                 >
                   <option value="PROMPTPAY" className="bg-card">สร้าง QR PromptPay อัตโนมัติ (Dynamic/Static)</option>
+                  <option value="BANK_TRANSFER" className="bg-card">โอนเข้าเลขบัญชีธนาคาร (ไม่ใช้ QR)</option>
                 </select>
               </div>
 

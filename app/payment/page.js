@@ -61,10 +61,13 @@ export default function PaymentPage() {
     fetchData();
   }, []);
 
-  // Update QR code when amount or user bank account changes
+  // Update QR code only when account is PROMPTPAY type
   useEffect(() => {
     if (!user || !user.assignedAccount) return;
-    
+    if (user.assignedAccount.qrType !== 'PROMPTPAY') {
+      setQrUrl('');
+      return;
+    }
     const target = user.assignedAccount.accountNumber;
     const payload = generatePromptPayPayload(target, amount);
     
@@ -273,23 +276,52 @@ export default function PaymentPage() {
                       />
                     </div>
 
-                    {/* Dynamic QR Code display */}
+                    {/* QR Code or Bank Transfer instructions */}
                     <div className="flex flex-col items-center py-2">
-                      {qrUrl ? (
-                        <div className="bg-white p-4 rounded-lg shadow-sm border flex flex-col items-center justify-center">
-                          {/* PromptPay banner logo */}
-                          <div className="w-full bg-[#0c3b60] text-white py-1 px-4 rounded-md mb-2 text-center text-[10px] font-bold tracking-wider">
-                            PROMPT PAY พร้อมเพย์
+                      {user.assignedAccount.qrType === 'PROMPTPAY' ? (
+                        qrUrl ? (
+                          <div className="bg-white p-4 rounded-lg shadow-sm border flex flex-col items-center justify-center">
+                            <div className="w-full bg-[#0c3b60] text-white py-1 px-4 rounded-md mb-2 text-center text-[10px] font-bold tracking-wider">
+                              PROMPT PAY พร้อมเพย์
+                            </div>
+                            <img src={qrUrl} alt="PromptPay QR Code" className="w-[180px] h-[180px]" />
+                            <div className="text-[9px] text-gray-500 mt-1.5 text-center flex items-center gap-1">
+                              <QrCode className="h-3 w-3 text-gray-400" />
+                              สแกนด้วยแอปธนาคารใดก็ได้
+                            </div>
                           </div>
-                          <img src={qrUrl} alt="PromptPay QR Code" className="w-[180px] h-[180px]" />
-                          <div className="text-[9px] text-gray-500 mt-1.5 text-center flex items-center gap-1">
-                            <QrCode className="h-3 w-3 text-gray-400" />
-                            สแกนด้วยแอปธนาคารใดก็ได้
+                        ) : (
+                          <div className="h-[210px] flex items-center justify-center text-muted-foreground text-sm">
+                            กำลังเตรียม QR Code...
                           </div>
-                        </div>
+                        )
                       ) : (
-                        <div className="h-[210px] flex items-center justify-center text-muted-foreground text-sm">
-                          กำลังเตรียม QR Code...
+                        <div className="w-full rounded-xl border border-border bg-muted/30 p-4 space-y-3">
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">วิธีโอนเงินผ่านแอปธนาคาร</p>
+                          <ol className="space-y-3 text-sm">
+                            <li className="flex gap-2.5 items-start">
+                              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-[10px] font-bold mt-0.5">1</span>
+                              <span>เปิดแอปธนาคารของคุณแล้วเลือก <strong>โอนเงิน / โอนเข้าเลขบัญชี</strong></span>
+                            </li>
+                            <li className="flex gap-2.5 items-start">
+                              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-[10px] font-bold mt-0.5">2</span>
+                              <div>
+                                <span>เลือกธนาคาร <strong>{user.assignedAccount.bankName}</strong> กรอกเลขบัญชี</span>
+                                <div className="mt-1 font-mono text-base font-bold text-primary tracking-widest bg-primary/5 border border-primary/20 rounded-md px-3 py-1.5 text-center">
+                                  {user.assignedAccount.accountNumber}
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1">ชื่อบัญชี: <strong className="text-foreground">{user.assignedAccount.accountName}</strong></p>
+                              </div>
+                            </li>
+                            <li className="flex gap-2.5 items-start">
+                              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-[10px] font-bold mt-0.5">3</span>
+                              <span>โอนจำนวน <strong className="text-primary">{amount ? `${parseFloat(amount).toLocaleString('th-TH')} บาท` : 'ตามที่ระบุด้านบน'}</strong></span>
+                            </li>
+                            <li className="flex gap-2.5 items-start">
+                              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-[10px] font-bold mt-0.5">4</span>
+                              <span>ถ่ายภาพสลิปยืนยันการโอน แล้วอัปโหลดด้านล่าง</span>
+                            </li>
+                          </ol>
                         </div>
                       )}
                     </div>
