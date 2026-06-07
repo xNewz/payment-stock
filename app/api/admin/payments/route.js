@@ -103,3 +103,33 @@ export async function PUT(request) {
     );
   }
 }
+
+export async function DELETE(request) {
+  try {
+    const admin = await checkAdmin();
+    if (!admin) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const { id } = await request.json();
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Payment ID is required' },
+        { status: 400 }
+      );
+    }
+
+    await prisma.payment.delete({
+      where: { id: parseInt(id, 10) },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Admin DELETE payment error:', error);
+    return NextResponse.json(
+      { error: 'Internal Server Error' },
+      { status: 500 }
+    );
+  }
+}

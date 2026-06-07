@@ -29,7 +29,8 @@ import {
   Edit3, 
   Eye,
   AlertTriangle,
-  FolderOpen
+  FolderOpen,
+  Trash2
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
 
@@ -93,6 +94,10 @@ export default function AdminPage() {
   const [statusSubmitting, setStatusSubmitting] = useState(false);
   const [slipModalOpen, setSlipModalOpen] = useState(false);
   const [viewingSlipUrl, setViewingSlipUrl] = useState('');
+
+  // Delete confirmation modal state
+  const [deleteTarget, setDeleteTarget] = useState(null); // { type: 'payment'|'user'|'account', id, label }
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
   // Fetch initial profile
   const fetchProfile = async () => {
@@ -356,6 +361,40 @@ export default function AdminPage() {
     }
   };
 
+  // Delete handlers
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    setDeleteSubmitting(true);
+
+    const endpointMap = {
+      payment: '/api/admin/payments',
+      user: '/api/admin/users',
+      account: '/api/admin/accounts',
+    };
+
+    try {
+      const res = await fetch(endpointMap[deleteTarget.type], {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: deleteTarget.id }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ลบข้อมูลไม่สำเร็จ');
+
+      // Refresh appropriate list
+      if (deleteTarget.type === 'payment') fetchPayments();
+      else if (deleteTarget.type === 'user') { fetchUsers(); fetchPayments(); }
+      else if (deleteTarget.type === 'account') { fetchAccounts(); fetchUsers(); }
+
+      setDeleteTarget(null);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setDeleteSubmitting(false);
+    }
+  };
+
   // Approve payment
   const handleApprovePayment = async (id) => {
     if (!confirm('คุณต้องการอนุมัติการชำระเงินนี้ใช่หรือไม่?')) return;
@@ -568,29 +607,40 @@ export default function AdminPage() {
                               )}
                             </TableCell>
                             <TableCell className="text-right">
-                              {p.status === 'PENDING' && (
-                                <div className="flex gap-1.5 justify-end">
-                                  <Button 
-                                    size="sm" 
-                                    className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-xs h-8 px-2.5"
-                                    onClick={() => handleApprovePayment(p.id)}
-                                    disabled={statusSubmitting}
-                                  >
-                                    <Check className="h-3.5 w-3.5 mr-1" />
-                                    อนุมัติ
-                                  </Button>
-                                  <Button 
-                                    size="sm" 
-                                    variant="destructive"
-                                    className="font-semibold text-xs h-8 px-2.5"
-                                    onClick={() => setSelectedPayment(p)}
-                                    disabled={statusSubmitting}
-                                  >
-                                    <X className="h-3.5 w-3.5 mr-1" />
-                                    ปฏิเสธ
-                                  </Button>
-                                </div>
-                              )}
+                              <div className="flex gap-1.5 justify-end">
+                                {p.status === 'PENDING' && (
+                                  <>
+                                    <Button 
+                                      size="sm" 
+                                      className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-xs h-8 px-2.5"
+                                      onClick={() => handleApprovePayment(p.id)}
+                                      disabled={statusSubmitting}
+                                    >
+                                      <Check className="h-3.5 w-3.5 mr-1" />
+                                      อนุมัติ
+                                    </Button>
+                                    <Button 
+                                      size="sm" 
+                                      variant="destructive"
+                                      className="font-semibold text-xs h-8 px-2.5"
+                                      onClick={() => setSelectedPayment(p)}
+                                      disabled={statusSubmitting}
+                                    >
+                                      <X className="h-3.5 w-3.5 mr-1" />
+                                      ปฏิเสธ
+                                    </Button>
+                                  </>
+                                )}
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-xs h-8 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  onClick={() => setDeleteTarget({ type: 'payment', id: p.id, label: `รายการของ ${p.user.name} จำนวน ${p.amount.toLocaleString('th-TH')} บาท` })}
+                                  disabled={statusSubmitting}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -784,15 +834,25 @@ export default function AdminPage() {
                                 )}
                               </TableCell>
                               <TableCell className="text-right">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="text-xs h-8 px-2.5"
-                                  onClick={() => startEditingUser(u)}
-                                >
-                                  <Edit3 className="h-3.5 w-3.5 mr-1" />
-                                  แก้ไข
-                                </Button>
+                                <div className="flex gap-1.5 justify-end">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="text-xs h-8 px-2.5"
+                                    onClick={() => startEditingUser(u)}
+                                  >
+                                    <Edit3 className="h-3.5 w-3.5 mr-1" />
+                                    แก้ไข
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-xs h-8 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                    onClick={() => setDeleteTarget({ type: 'user', id: u.id, label: `${u.name} (@${u.username})` })}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
                               </TableCell>
                             </TableRow>
                           ))
@@ -933,15 +993,25 @@ export default function AdminPage() {
                               <TableCell className="font-mono text-sm font-semibold">{acc.accountNumber}</TableCell>
                               <TableCell className="text-sm">{acc.accountName}</TableCell>
                               <TableCell className="text-right">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="text-xs h-8 px-2.5"
-                                  onClick={() => startEditingAccount(acc)}
-                                >
-                                  <Edit3 className="h-3.5 w-3.5 mr-1" />
-                                  แก้ไข
-                                </Button>
+                                <div className="flex gap-1.5 justify-end">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="text-xs h-8 px-2.5"
+                                    onClick={() => startEditingAccount(acc)}
+                                  >
+                                    <Edit3 className="h-3.5 w-3.5 mr-1" />
+                                    แก้ไข
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-xs h-8 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                    onClick={() => setDeleteTarget({ type: 'account', id: acc.id, label: `${acc.bankName} - ${acc.accountNumber}` })}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
                               </TableCell>
                             </TableRow>
                           ))
@@ -1250,6 +1320,56 @@ export default function AdminPage() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-card border rounded-lg w-full max-w-sm p-6 shadow-lg relative animate-in fade-in zoom-in-95 duration-200">
+            <button
+              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground text-xl"
+              onClick={() => setDeleteTarget(null)}
+              disabled={deleteSubmitting}
+            >×</button>
+
+            <div className="flex flex-col items-center text-center gap-3 mb-5">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
+                <Trash2 className="h-6 w-6 text-destructive" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-foreground">ยืนยันการลบข้อมูล</h3>
+                <p className="text-sm text-muted-foreground mt-1">การดำเนินการนี้ไม่สามารถย้อนกลับได้</p>
+              </div>
+            </div>
+
+            <div className="bg-destructive/5 border border-destructive/20 rounded-md p-3 mb-5">
+              <p className="text-xs text-center text-destructive font-semibold break-words">
+                {deleteTarget.label}
+              </p>
+            </div>
+
+            <div className="flex gap-2.5">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleteSubmitting}
+              >
+                ยกเลิก
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                className="flex-1 font-semibold"
+                onClick={handleDeleteConfirm}
+                disabled={deleteSubmitting}
+              >
+                {deleteSubmitting ? 'กำลังลบ...' : 'ยืนยันลบ'}
+              </Button>
+            </div>
           </div>
         </div>
       )}

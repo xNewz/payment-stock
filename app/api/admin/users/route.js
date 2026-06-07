@@ -188,3 +188,44 @@ export async function PUT(request) {
     );
   }
 }
+
+export async function DELETE(request) {
+  try {
+    const admin = await checkAdmin();
+    if (!admin) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const { id } = await request.json();
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'User ID is required' },
+        { status: 400 }
+      );
+    }
+
+    const userId = parseInt(id, 10);
+
+    // Prevent deleting the currently logged-in admin
+    if (userId === admin.id) {
+      return NextResponse.json(
+        { error: 'ไม่สามารถลบบัญชีของตัวเองได้' },
+        { status: 400 }
+      );
+    }
+
+    // Delete user's payments first (cascade)
+    await prisma.payment.deleteMany({ where: { userId } });
+
+    await prisma.user.delete({ where: { id: userId } });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Admin DELETE user error:', error);
+    return NextResponse.json(
+      { error: 'Internal Server Error' },
+      { status: 500 }
+    );
+  }
+}

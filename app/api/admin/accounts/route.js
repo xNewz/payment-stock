@@ -103,3 +103,45 @@ export async function PUT(request) {
     );
   }
 }
+
+export async function DELETE(request) {
+  try {
+    const admin = await checkAdmin();
+    if (!admin) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const { id } = await request.json();
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Account ID is required' },
+        { status: 400 }
+      );
+    }
+
+    const accountId = parseInt(id, 10);
+
+    // Check if account is still linked to any user
+    const linkedUsers = await prisma.user.count({
+      where: { assignedAccountId: accountId },
+    });
+
+    if (linkedUsers > 0) {
+      return NextResponse.json(
+        { error: `ไม่สามารถลบได้ เนื่องจากบัญชีนี้ยังถูกกำหนดให้ผู้ใช้งาน ${linkedUsers} คน กรุณาเปลี่ยนบัญชีให้ผู้ใช้เหล่านั้นก่อน` },
+        { status: 400 }
+      );
+    }
+
+    await prisma.bankAccount.delete({ where: { id: accountId } });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Admin DELETE account error:', error);
+    return NextResponse.json(
+      { error: 'Internal Server Error' },
+      { status: 500 }
+    );
+  }
+}
