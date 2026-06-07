@@ -137,6 +137,9 @@ export default function AdminPage() {
   // Password Modal
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
 
+  // User tab filter state
+  const [userBankFilter, setUserBankFilter] = useState('ALL');
+
   // Fetch initial profile
   const fetchProfile = async () => {
     try {
@@ -885,13 +888,30 @@ export default function AdminPage() {
               {/* List users */}
               <Card className="lg:col-span-7 shadow-sm min-h-[500px]">
                 <CardHeader>
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <Users className="h-5 w-5 text-primary" />
-                    รายชื่อผู้ใช้งานทั่วไปในระบบ
-                  </CardTitle>
-                  <CardDescription>
-                    รายชื่อผู้ใช้ที่ลงทะเบียนแล้ว (ไม่รวมแอดมิน) และบัญชีธนาคารรับเงินที่ถูกเลือกให้
-                  </CardDescription>
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <Users className="h-5 w-5 text-primary" />
+                        รายชื่อผู้ใช้งานทั่วไปในระบบ
+                      </CardTitle>
+                      <CardDescription>
+                        รายชื่อผู้ใช้ที่ลงทะเบียนแล้ว (ไม่รวมแอดมิน) และบัญชีธนาคารรับเงินที่ถูกเลือกให้
+                      </CardDescription>
+                    </div>
+                    <select
+                      className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-w-[200px]"
+                      value={userBankFilter}
+                      onChange={(e) => setUserBankFilter(e.target.value)}
+                    >
+                      <option value="ALL">ดูทุกบัญชีรับเงิน</option>
+                      {accounts.map(acc => (
+                        <option key={acc.id} value={acc.id.toString()}>
+                          {acc.bankName}
+                        </option>
+                      ))}
+                      <option value="UNASSIGNED">ยังไม่ได้กำหนดบัญชี</option>
+                    </select>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="border rounded-md overflow-hidden">
@@ -905,14 +925,24 @@ export default function AdminPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {users.filter(u => u.role !== 'ADMIN').length === 0 ? (
+                        {users.filter(u => {
+                          if (u.role === 'ADMIN') return false;
+                          if (userBankFilter === 'ALL') return true;
+                          if (userBankFilter === 'UNASSIGNED') return u.assignedAccountId === null;
+                          return u.assignedAccountId?.toString() === userBankFilter;
+                        }).length === 0 ? (
                           <TableRow>
                             <TableCell colSpan={4} className="text-center text-muted-foreground py-12">
-                              ยังไม่พบข้อมูลผู้ใช้งานทั่วไปในระบบ
+                              ยังไม่พบข้อมูลผู้ใช้งานที่ตรงกับเงื่อนไข
                             </TableCell>
                           </TableRow>
                         ) : (
-                          users.filter(u => u.role !== 'ADMIN').map((u) => (
+                          users.filter(u => {
+                            if (u.role === 'ADMIN') return false;
+                            if (userBankFilter === 'ALL') return true;
+                            if (userBankFilter === 'UNASSIGNED') return u.assignedAccountId === null;
+                            return u.assignedAccountId?.toString() === userBankFilter;
+                          }).map((u) => (
                             <TableRow key={u.id} className="hover:bg-muted/10">
                               <TableCell>
                                 <div className="font-bold text-sm">{u.name}</div>
