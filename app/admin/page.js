@@ -47,6 +47,8 @@ import {
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
 
+import { ChangePasswordModal } from '@/components/change-password-modal';
+
 export default function AdminPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('payments'); // 'payments' | 'users' | 'accounts' | 'transactions'
@@ -130,6 +132,9 @@ export default function AdminPage() {
   // Delete confirmation modal state
   const [deleteTarget, setDeleteTarget] = useState(null); // { type: 'payment'|'user'|'account', id, label }
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+
+  // Password Modal
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
 
   // Fetch initial profile
   const fetchProfile = async () => {
@@ -571,6 +576,11 @@ export default function AdminPage() {
             <div className="h-7 w-px bg-border hidden sm:block" />
             <ThemeToggle />
             <div className="h-7 w-px bg-border" />
+            <Button variant="ghost" size="sm" onClick={() => setIsPasswordModalOpen(true)} className="gap-2 text-muted-foreground hover:text-foreground">
+              <KeyRound className="h-4 w-4" />
+              <span className="hidden sm:inline">เปลี่ยนรหัสผ่าน</span>
+            </Button>
+            <div className="h-7 w-px bg-border hidden sm:block" />
             <Button variant="ghost" size="sm" onClick={handleLogout} className="gap-2 text-muted-foreground hover:text-foreground">
               <LogOut className="h-4 w-4" />
               <span className="hidden sm:inline">ออกจากระบบ</span>
@@ -2129,6 +2139,11 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+      {/* Change Password Modal */}
+      <ChangePasswordModal 
+        isOpen={isPasswordModalOpen} 
+        onClose={() => setIsPasswordModalOpen(false)} 
+      />
 
     </div>
   );

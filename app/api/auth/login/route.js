@@ -22,13 +22,14 @@ export async function POST(request) {
 
     const cleanUsername = username.trim();
     const lookupByPhone = isPhoneNumber(cleanUsername);
+    const searchPhone = lookupByPhone ? cleanUsername.replace(/[-\s]/g, '') : cleanUsername;
 
     console.log(`[Login API] Attempting login for: "${cleanUsername}" (phone: ${lookupByPhone})`);
 
     // Find user by phone or username
     const user = await prisma.user.findFirst({
       where: lookupByPhone
-        ? { phone: cleanUsername }
+        ? { phone: searchPhone }
         : { OR: [{ username: cleanUsername }, { phone: cleanUsername }] },
     });
 

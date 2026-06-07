@@ -15,9 +15,11 @@ import {
   Coins, 
   Wallet,
   AlertTriangle,
-  QrCode
+  QrCode,
+  KeyRound
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { ChangePasswordModal } from '@/components/change-password-modal';
 
 export default function PaymentPage() {
   const router = useRouter();
@@ -32,6 +34,7 @@ export default function PaymentPage() {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [dragActive, setDragActive] = useState(false);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
 
   // Fetch user profile and payments history
   const fetchData = async () => {
@@ -206,6 +209,11 @@ export default function PaymentPage() {
             <div className="h-7 w-px bg-border hidden sm:block" />
             <ThemeToggle />
             <div className="h-7 w-px bg-border" />
+            <Button variant="ghost" size="sm" onClick={() => setIsPasswordModalOpen(true)} className="gap-2 text-muted-foreground hover:text-foreground">
+              <KeyRound className="h-4 w-4" />
+              <span className="hidden sm:inline">เปลี่ยนรหัสผ่าน</span>
+            </Button>
+            <div className="h-7 w-px bg-border hidden sm:block" />
             <Button variant="ghost" size="sm" onClick={handleLogout} className="gap-2 text-muted-foreground hover:text-foreground">
               <LogOut className="h-4 w-4" />
               <span className="hidden sm:inline">ออกจากระบบ</span>
@@ -412,6 +420,11 @@ export default function PaymentPage() {
 
         </div>
       </main>
+
+      <ChangePasswordModal 
+        isOpen={isPasswordModalOpen} 
+        onClose={() => setIsPasswordModalOpen(false)} 
+      />
     </div>
   );
 }
