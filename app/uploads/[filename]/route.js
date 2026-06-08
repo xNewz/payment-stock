@@ -3,12 +3,18 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { verifyAuth } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { verifyBearerToken } from '@/lib/apiToken';
 
 export async function GET(request, { params }) {
   try {
-    const payload = await verifyAuth();
-    if (!payload) {
-      return new NextResponse('Unauthorized', { status: 401 });
+    const bearerToken = await verifyBearerToken(request);
+    let payload = null;
+
+    if (!bearerToken) {
+      payload = await verifyAuth();
+      if (!payload) {
+        return new NextResponse('Unauthorized', { status: 401 });
+      }
     }
 
     const { filename } = await params;
@@ -18,8 +24,8 @@ export async function GET(request, { params }) {
       return new NextResponse('Invalid filename', { status: 400 });
     }
 
-    // Check authorization: Admin or Owner
-    if (payload.role !== 'ADMIN') {
+    // Check authorization: Admin or Owner (if not accessed via Bearer Token)
+    if (!bearerToken && payload.role !== 'ADMIN') {
       const payment = await prisma.payment.findFirst({
         where: { slipUrl: `/uploads/${filename}` },
         select: { userId: true },
