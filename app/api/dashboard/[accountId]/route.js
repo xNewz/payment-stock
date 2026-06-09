@@ -122,6 +122,7 @@ export async function GET(request, { params }) {
 
     return NextResponse.json({
       generatedAt: new Date().toISOString(),
+      referenceNumber: crypto.randomUUID(),
 
       // Account info
       account: {
