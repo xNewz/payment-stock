@@ -40,7 +40,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const { bankName, accountNumber, accountName, qrType } = await request.json();
+    const { bankName, accountNumber, accountName, qrType, remark } = await request.json();
 
     if (!bankName || !accountNumber || !accountName) {
       return NextResponse.json(
@@ -49,12 +49,17 @@ export async function POST(request) {
       );
     }
 
+    // Cap remark length to a sensible upper bound to avoid abuse
+    const safeRemark =
+      typeof remark === 'string' ? remark.trim().slice(0, 2000) : null;
+
     const newAccount = await prisma.bankAccount.create({
       data: {
         bankName,
         accountNumber,
         accountName,
         qrType: qrType || 'PROMPTPAY',
+        remark: safeRemark || null,
       },
     });
 
@@ -75,23 +80,45 @@ export async function PUT(request) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const { id, bankName, accountNumber, accountName, qrType } = await request.json();
+    const body = await request.json();
+    const { id, bankName, accountNumber, accountName, qrType, remark } = body;
 
-    if (!id || !bankName || !accountNumber || !accountName) {
+    if (!id) {
       return NextResponse.json(
-        { error: 'Account ID, bank name, account number, and account name are required' },
+        { error: 'Account ID is required' },
         { status: 400 }
       );
     }
 
+    // Partial update mode: only `remark` provided (used by the Remark modal)
+    const isRemarkOnly =
+      Object.prototype.hasOwnProperty.call(body, 'remark') &&
+      bankName === undefined &&
+      accountNumber === undefined &&
+      accountName === undefined &&
+      qrType === undefined;
+
+    if (!isRemarkOnly && (!bankName || !accountNumber || !accountName)) {
+      return NextResponse.json(
+        { error: 'Bank name, account number, and account name are required' },
+        { status: 400 }
+      );
+    }
+
+    const data = {};
+    if (bankName !== undefined) data.bankName = String(bankName).trim();
+    if (accountNumber !== undefined) data.accountNumber = String(accountNumber).trim();
+    if (accountName !== undefined) data.accountName = String(accountName).trim();
+    if (qrType !== undefined) data.qrType = qrType || 'PROMPTPAY';
+    if (Object.prototype.hasOwnProperty.call(body, 'remark')) {
+      const safe =
+        typeof remark === 'string' ? remark.trim().slice(0, 2000) : '';
+      data.remark = safe.length ? safe : null;
+    }
+
     const updatedAccount = await prisma.bankAccount.update({
       where: { id: parseInt(id, 10) },
-      data: {
-        bankName: bankName.trim(),
-        accountNumber: accountNumber.trim(),
-        accountName: accountName.trim(),
-        qrType: qrType || 'PROMPTPAY',
-      },
+      data,
     });
 
     return NextResponse.json({ account: updatedAccount });

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import prisma from '@/lib/prisma';
-import { signToken } from '@/lib/auth';
+import { signToken, buildAuthCookie } from '@/lib/auth';
 import { cookies } from 'next/headers';
 
 // Detect if a string is a Thai phone number (10 digits, starts with 0)
@@ -98,15 +98,7 @@ export async function POST(request) {
     });
 
     const cookieStore = await cookies();
-    cookieStore.set({
-      name: 'token',
-      value: token,
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 7, // 7 days
-    });
+    cookieStore.set(buildAuthCookie(token));
 
     return NextResponse.json({
       user: {
@@ -115,6 +107,9 @@ export async function POST(request) {
         name: user.name,
         role: user.role,
       },
+      // Token mirrored in body so client can persist in localStorage
+      // as a fallback for in-app browsers (LINE/Facebook) that drop cookies.
+      token,
     });
   } catch (error) {
     console.error('Login error:', error);

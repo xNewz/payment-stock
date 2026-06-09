@@ -2,6 +2,7 @@ import "./globals.css";
 import { Prompt } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import { WebviewDetector } from "@/components/webview-detector";
+import { AuroraBackground } from "@/components/aurora-background";
 
 const prompt = Prompt({
   subsets: ["thai", "latin"],
@@ -22,10 +23,11 @@ export default function RootLayout({ children }) {
       <body className="min-h-screen bg-background text-foreground antialiased flex flex-col font-sans">
         <ThemeProvider
           attribute="class"
-          defaultTheme="dark"
+          defaultTheme="light"
           enableSystem
           disableTransitionOnChange
         >
+          <AuroraBackground />
           <WebviewDetector />
           {children}
         </ThemeProvider>

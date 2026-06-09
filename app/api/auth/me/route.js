@@ -30,7 +30,17 @@ export async function GET() {
         name: true,
         role: true,
         assignedAccountId: true,
-        assignedAccount: true,
+        // Explicit field selection so admin-only fields (e.g. `remark`)
+        // are never leaked to the user-facing payment page.
+        assignedAccount: {
+          select: {
+            id: true,
+            bankName: true,
+            accountNumber: true,
+            accountName: true,
+            qrType: true,
+          },
+        },
       },
     });
 

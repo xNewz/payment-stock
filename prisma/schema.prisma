@@ -27,6 +27,7 @@ model BankAccount {
   accountNumber String    // Account number or PromptPay ID
   accountName   String    // Name of account holder
   qrType        String    @default("PROMPTPAY") // "PROMPTPAY" or "STATIC"
+  remark        String?   @db.Text // Free-form note (e.g. links / which website is connected)
   users         User[]
   payments      Payment[]
   createdAt     DateTime  @default(now())

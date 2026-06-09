@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import QRCode from 'qrcode';
 import { generatePromptPayPayload } from '@/lib/promptpay';
 import { compressImage } from '@/lib/imageCompress';
+import { authFetch, getAuth, logoutClient } from '@/lib/authClient';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -39,7 +40,7 @@ export default function PaymentPage() {
   // Fetch payments history only (lightweight, called after each upload)
   const fetchPayments = async () => {
     try {
-      const payRes = await fetch('/api/payments');
+      const payRes = await authFetch('/api/payments');
       if (payRes.ok) {
         const payData = await payRes.json();
         setPayments(payData.payments);
@@ -53,8 +54,8 @@ export default function PaymentPage() {
   const fetchData = async () => {
     try {
       const [meRes, payRes] = await Promise.all([
-        fetch(`/api/auth/me?t=${Date.now()}`),
-        fetch('/api/payments'),
+        authFetch(`/api/auth/me?t=${Date.now()}`),
+        authFetch('/api/payments'),
       ]);
       if (!meRes.ok) {
         window.location.href = '/login';
@@ -102,7 +103,7 @@ export default function PaymentPage() {
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      await logoutClient();
       router.push('/login');
       router.refresh();
     } catch (err) {
@@ -153,6 +154,11 @@ export default function PaymentPage() {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', '/api/payments');
+      xhr.withCredentials = true;
+      // Attach Bearer fallback so upload still authenticates even when
+      // the in-app browser dropped the cookie mid-session.
+      const token = getAuth();
+      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) {
           const pct = Math.round((e.loaded / e.total) * 100);
@@ -231,8 +237,8 @@ export default function PaymentPage() {
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen gap-3">
-        <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-        <span className="text-sm font-medium text-muted-foreground">กำลังโหลดข้อมูล...</span>
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-amber-400 border-t-transparent" />
+        <span className="text-sm font-medium text-gold">กำลังโหลดข้อมูล...</span>
       </div>
     );
   }
@@ -240,9 +246,9 @@ export default function PaymentPage() {
   return (
     <div className="flex flex-col min-h-screen">
       {/* Top Navigation Bar */}
-      <header className="border-b bg-card/90 backdrop-blur-md sticky top-0 z-50">
+      <header className="glass-strong sticky top-0 z-50">
         {/* Brand accent top line */}
-        <div className="h-[2px] w-full bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500" />
+        <div className="brand-line" />
         <div className="flex justify-between items-center px-6 py-3 max-w-7xl mx-auto w-full">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -267,7 +273,7 @@ export default function PaymentPage() {
       </header>
 
       {/* Page Header Area */}
-      <div className="border-b bg-card/30">
+      <div className="border-b border-border/40 bg-card/20 backdrop-blur-sm">
         <div className="px-6 py-6 max-w-7xl mx-auto w-full">
           <h1 className="text-xl font-semibold tracking-tight">Payment Portal</h1>
           <p className="text-muted-foreground mt-1 text-sm">อัปโหลดสลิปการโอนเงิน และติดตามสถานะการตรวจสอบ</p>
@@ -279,7 +285,7 @@ export default function PaymentPage() {
         <div className="flex flex-col gap-6">
           
           {/* Payment Card Column */}
-          <Card className="shadow-md border-border/60">
+          <Card className="glass-card surface-highlight">
             <CardHeader className="pb-4">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -451,7 +457,7 @@ export default function PaymentPage() {
                         </div>
                         <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
                           <div
-                            className="h-full bg-primary transition-all duration-200 ease-out"
+                            className="h-full bg-gradient-to-r from-amber-400 to-yellow-500 transition-all duration-200 ease-out"
                             style={{
                               width: uploadPhase === 'compressing'
                                 ? '15%'
@@ -466,7 +472,7 @@ export default function PaymentPage() {
 
                     <Button
                       type="submit"
-                      className="w-full"
+                      className="w-full h-11 btn-premium rounded-xl"
                       disabled={submitting}
                     >
                       {submitting ? 'กำลังส่งข้อมูล...' : 'ส่งสลิปเพื่อตรวจสอบ'}
@@ -487,7 +493,7 @@ export default function PaymentPage() {
           </Card>
 
           {/* Payment History */}
-          <Card className="shadow-md border-border/60">
+          <Card className="glass-card surface-highlight">
             <CardHeader className="pb-4">
               <CardTitle className="text-lg font-semibold">ประวัติการชำระเงิน</CardTitle>
               <CardDescription className="text-xs">
@@ -499,24 +505,24 @@ export default function PaymentPage() {
             </CardHeader>
             <CardContent>
               {payments.length === 0 ? (
-                <div className="text-center py-6 text-muted-foreground text-sm">
+                <div className="text-center py-10 text-muted-foreground text-sm border border-dashed border-border/60 rounded-xl bg-card/20">
                   ยังไม่มีประวัติการชำระเงินในเดือนนี้
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {payments.map((p) => (
-                    <div key={p.id} className="flex items-center justify-between p-4 border rounded-lg">
+                    <div key={p.id} className="flex items-center justify-between p-4 rounded-xl border border-border/50 bg-card/40 hover:bg-card/60 hover:border-amber-500/30 transition-colors">
                       <div>
-                        <p className="font-semibold">{p.amount.toLocaleString('th-TH')} บาท</p>
-                        <p className="text-xs text-muted-foreground">{new Date(p.createdAt).toLocaleString('th-TH')}</p>
+                        <p className="font-semibold tabular-nums">{p.amount.toLocaleString('th-TH')} <span className="text-xs font-medium text-muted-foreground">บาท</span></p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{new Date(p.createdAt).toLocaleString('th-TH')}</p>
                       </div>
                       <div>
-                        {p.status === 'PENDING' && <Badge variant="outline" className="text-yellow-600 border-yellow-600">รอดำเนินการ</Badge>}
-                        {p.status === 'APPROVED' && <Badge variant="outline" className="text-green-600 border-green-600">อนุมัติแล้ว</Badge>}
+                        {p.status === 'PENDING' && <span className="pill-amber">รอดำเนินการ</span>}
+                        {p.status === 'APPROVED' && <span className="pill-emerald">อนุมัติแล้ว</span>}
                         {p.status === 'REJECTED' && (
                           <div className="flex flex-col items-end">
-                            <Badge variant="outline" className="text-red-600 border-red-600">ปฏิเสธ</Badge>
-                            {p.rejectedReason && <span className="text-[10px] text-red-500 mt-1 max-w-[120px] text-right truncate" title={p.rejectedReason}>{p.rejectedReason}</span>}
+                            <span className="pill-rose">ปฏิเสธ</span>
+                            {p.rejectedReason && <span className="text-[10px] text-rose-400 mt-1 max-w-[140px] text-right truncate" title={p.rejectedReason}>{p.rejectedReason}</span>}
                           </div>
                         )}
                       </div>

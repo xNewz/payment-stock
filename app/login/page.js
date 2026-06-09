@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { AlertCircle, Loader2, ArrowRight, ShieldAlert } from 'lucide-react';
+import { saveAuth, tryRestoreSession } from '@/lib/authClient';
 
 function isPhoneNumber(value) {
   return /^0\d{9}$/.test(value.replace(/[-\s]/g, ''));
@@ -23,11 +24,30 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [restoring, setRestoring] = useState(true);
 
   const identifierRef = useRef(null);
   const passwordRef = useRef(null);
 
   const isPhone = isPhoneNumber(identifier);
+
+  // ── On mount: try to restore session from localStorage ──
+  // This rescues users coming back into an in-app browser (LINE/Facebook)
+  // whose cookie was dropped by the webview. If a valid token is in
+  // localStorage, the server re-issues the cookie and we redirect.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const user = await tryRestoreSession();
+      if (cancelled) return;
+      if (user) {
+        window.location.replace(user.role === 'ADMIN' ? '/admin' : '/payment');
+        return;
+      }
+      setRestoring(false);
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Focus password field when we switch to password step
   useEffect(() => {
@@ -67,6 +87,11 @@ export default function LoginPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
 
+      // Persist token in localStorage as a cookie fallback for in-app
+      // browsers (LINE/Facebook) that drop httpOnly cookies. Saved BEFORE
+      // navigation so the next page boot can use it.
+      if (data.token) saveAuth(data.token);
+
       // Use hard redirect (window.location.href) instead of router.push
       // This is crucial for WebViews (LINE, Facebook) to properly sync the cookie jar
       window.location.href = data.user.role === 'ADMIN' ? '/admin' : '/payment';
@@ -91,22 +116,23 @@ export default function LoginPage() {
   const isAdminStep = step === 'password';
   const identifierConfirmed = isAdminStep; // greyed out / locked when on password step
 
+  // While we're checking localStorage for a saved token, show a tiny spinner
+  // so the form doesn't flash visible before an auto-redirect.
+  if (restoring) {
+    return (
+      <div className="flex min-h-[100dvh] w-full items-center justify-center bg-background">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
   return (
     <div className="relative flex min-h-[100dvh] w-full items-center justify-center overflow-hidden p-4">
-      {/* Aurora Background */}
-      <div className="absolute inset-0 -z-10 bg-background" />
-      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden="true">
-        {/* Orb 1 – amber/gold */}
-        <div className="absolute -top-[20%] left-[10%] h-[60vh] w-[60vw] rounded-full bg-[radial-gradient(ellipse_at_center,oklch(0.78_0.16_80)_0%,transparent_65%)] opacity-20 blur-3xl" />
-        {/* Orb 2 – warm gold */}
-        <div className="absolute bottom-[-10%] right-[5%] h-[55vh] w-[55vw] rounded-full bg-[radial-gradient(ellipse_at_center,oklch(0.72_0.18_65)_0%,transparent_65%)] opacity-15 blur-3xl" />
-        {/* Orb 3 – light gold accent */}
-        <div className="absolute top-[40%] left-[55%] h-[35vh] w-[35vw] rounded-full bg-[radial-gradient(ellipse_at_center,oklch(0.85_0.12_90)_0%,transparent_65%)] opacity-10 blur-3xl" />
-      </div>
+      {/* Aurora background is provided globally by app/layout.js */}
 
-      <Card className="relative w-full max-w-sm overflow-hidden border-border/60 bg-card/80 shadow-2xl shadow-black/30 backdrop-blur-md">
+      <Card className="relative w-full max-w-sm overflow-hidden glass-card shadow-2xl shadow-black/40">
         {/* Brand accent top line */}
-        <div className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500" />
+        <div className="absolute inset-x-0 top-0 brand-line" />
 
         <CardHeader className="space-y-2 px-8 pb-4 pt-10 text-center">
           <div className="space-y-1">
@@ -161,7 +187,7 @@ export default function LoginPage() {
                 <Button
                   type="button"
                   onClick={handleIdentifierNext}
-                  className="h-10 w-full font-semibold shadow-md hover:opacity-90 transition-opacity"
+                  className="h-11 w-full btn-premium rounded-xl"
                   disabled={loading}
                 >
                   {loading ? (
@@ -229,7 +255,7 @@ export default function LoginPage() {
 
               <Button
                 type="submit"
-                className="h-10 w-full font-semibold shadow-md hover:opacity-90 transition-opacity bg-amber-600 hover:bg-amber-700 text-white"
+                className="h-11 w-full btn-premium rounded-xl"
                 disabled={loading || !password}
               >
                 {loading ? (

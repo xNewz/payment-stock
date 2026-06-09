@@ -44,11 +44,48 @@ import {
   Link2,
   ChevronDown,
   ChevronUp,
-  KeyRound
+  KeyRound,
+  StickyNote,
+  ExternalLink,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
 
 import { ChangePasswordModal } from '@/components/change-password-modal';
+import { authFetch, logoutClient } from '@/lib/authClient';
+
+/**
+ * Render free-form text and turn any http/https URL into a safe clickable
+ * link. Uses React text nodes (no dangerouslySetInnerHTML) so the content
+ * cannot inject HTML/scripts.
+ */
+const URL_REGEX = /(https?:\/\/[^\s<>"']+)/g;
+function renderRemarkWithLinks(text) {
+  if (!text) return null;
+  const parts = String(text).split(URL_REGEX);
+  return parts.map((part, i) => {
+    if (i % 2 === 1) {
+      // Strip trailing punctuation that often clings to URLs in prose
+      const trailing = part.match(/[.,;:!?)\]]+$/);
+      const clean = trailing ? part.slice(0, -trailing[0].length) : part;
+      const tail = trailing ? trailing[0] : '';
+      return (
+        <span key={i}>
+          <a
+            href={clean}
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+            className="text-primary underline decoration-primary/40 underline-offset-2 hover:decoration-primary break-all inline-flex items-center gap-0.5"
+          >
+            {clean}
+            <ExternalLink className="h-3 w-3 shrink-0" />
+          </a>
+          {tail}
+        </span>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
 
 export default function AdminPage() {
   const router = useRouter();
@@ -104,6 +141,12 @@ export default function AdminPage() {
   const [editAccountFormSuccess, setEditAccountFormSuccess] = useState('');
   const [editAccountSubmitting, setEditAccountSubmitting] = useState(false);
 
+  // Remark (admin-only note/link for a bank account)
+  const [remarkAccount, setRemarkAccount] = useState(null);
+  const [remarkText, setRemarkText] = useState('');
+  const [remarkError, setRemarkError] = useState('');
+  const [remarkSubmitting, setRemarkSubmitting] = useState(false);
+
   // Slip Rejection modal state
   const [selectedPayment, setSelectedPayment] = useState(null);
   const [rejectedReason, setRejectedReason] = useState('');
@@ -149,7 +192,7 @@ export default function AdminPage() {
   // Fetch initial profile
   const fetchProfile = async () => {
     try {
-      const res = await fetch(`/api/auth/me?t=${Date.now()}`);
+      const res = await authFetch(`/api/auth/me?t=${Date.now()}`);
       if (!res.ok) {
         window.location.href = '/login';
         return;
@@ -169,7 +212,7 @@ export default function AdminPage() {
   // Fetch lists
   const fetchPayments = async () => {
     try {
-      const res = await fetch('/api/admin/payments');
+      const res = await authFetch('/api/admin/payments');
       if (res.ok) {
         const data = await res.json();
         setPayments(data.payments);
@@ -181,7 +224,7 @@ export default function AdminPage() {
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch('/api/admin/users');
+      const res = await authFetch('/api/admin/users');
       if (res.ok) {
         const data = await res.json();
         setUsers(data.users);
@@ -193,7 +236,7 @@ export default function AdminPage() {
 
   const fetchAccounts = async () => {
     try {
-      const res = await fetch('/api/admin/accounts');
+      const res = await authFetch('/api/admin/accounts');
       if (res.ok) {
         const data = await res.json();
         setAccounts(data.accounts);
@@ -205,7 +248,7 @@ export default function AdminPage() {
 
   const fetchApiTokens = async () => {
     try {
-      const res = await fetch('/api/admin/api-tokens');
+      const res = await authFetch('/api/admin/api-tokens');
       if (res.ok) {
         const data = await res.json();
         setApiTokens(data.tokens);
@@ -230,7 +273,7 @@ export default function AdminPage() {
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      await logoutClient();
       router.push('/login');
       router.refresh();
     } catch (err) {
@@ -246,7 +289,7 @@ export default function AdminPage() {
     setUserSubmitting(true);
 
     try {
-      const res = await fetch('/api/admin/users', {
+      const res = await authFetch('/api/admin/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -300,7 +343,7 @@ export default function AdminPage() {
     setEditSubmitting(true);
 
     try {
-      const res = await fetch('/api/admin/users', {
+      const res = await authFetch('/api/admin/users', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -342,7 +385,7 @@ export default function AdminPage() {
     setAccountSubmitting(true);
 
     try {
-      const res = await fetch('/api/admin/accounts', {
+      const res = await authFetch('/api/admin/accounts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -389,7 +432,7 @@ export default function AdminPage() {
     setEditAccountSubmitting(true);
 
     try {
-      const res = await fetch('/api/admin/accounts', {
+      const res = await authFetch('/api/admin/accounts', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -418,6 +461,39 @@ export default function AdminPage() {
       setEditAccountFormError(err.message);
     } finally {
       setEditAccountSubmitting(false);
+    }
+  };
+
+  // ── Remark handlers ────────────────────────────────────────────────
+  const startEditingRemark = (acc) => {
+    setRemarkAccount(acc);
+    setRemarkText(acc.remark || '');
+    setRemarkError('');
+  };
+
+  const handleRemarkSubmit = async (e) => {
+    e.preventDefault();
+    if (!remarkAccount) return;
+    setRemarkError('');
+    setRemarkSubmitting(true);
+    try {
+      const res = await authFetch('/api/admin/accounts', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: remarkAccount.id,
+          remark: remarkText,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'บันทึก Remark ไม่สำเร็จ');
+      await fetchAccounts();
+      setRemarkAccount(null);
+      setRemarkText('');
+    } catch (err) {
+      setRemarkError(err.message);
+    } finally {
+      setRemarkSubmitting(false);
     }
   };
 
@@ -461,7 +537,7 @@ export default function AdminPage() {
     setJustCreatedToken(null);
     setTokenSubmitting(true);
     try {
-      const res = await fetch('/api/admin/api-tokens', {
+      const res = await authFetch('/api/admin/api-tokens', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -485,7 +561,7 @@ export default function AdminPage() {
   const handleRevokeToken = async (id, name) => {
     if (!confirm(`ยืนยันยกเลิก token "${name}" ใช่หรือไม่?`)) return;
     try {
-      const res = await fetch('/api/admin/api-tokens', {
+      const res = await authFetch('/api/admin/api-tokens', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id }),
@@ -503,7 +579,7 @@ export default function AdminPage() {
     setStatusSubmitting(true);
 
     try {
-      const res = await fetch('/api/admin/payments', {
+      const res = await authFetch('/api/admin/payments', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, status: 'APPROVED' })
@@ -529,7 +605,7 @@ export default function AdminPage() {
     setStatusSubmitting(true);
 
     try {
-      const res = await fetch('/api/admin/payments', {
+      const res = await authFetch('/api/admin/payments', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -556,10 +632,11 @@ export default function AdminPage() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center min-h-screen">
-        <h2 className="text-2xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent animate-pulse">
+      <div className="flex justify-center items-center min-h-screen gap-3">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-amber-400 border-t-transparent" />
+        <span className="text-sm font-medium text-gold tracking-wide">
           กำลังโหลดข้อมูลแผงควบคุมผู้ดูแลระบบ...
-        </h2>
+        </span>
       </div>
     );
   }
@@ -567,9 +644,9 @@ export default function AdminPage() {
   return (
     <div className="flex flex-col min-h-screen">
       {/* Top Navigation Bar */}
-      <header className="border-b bg-card/90 backdrop-blur-md sticky top-0 z-50">
+      <header className="glass-strong sticky top-0 z-50">
         {/* Brand accent top line */}
-        <div className="h-[2px] w-full bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500" />
+        <div className="brand-line" />
         <div className="flex justify-between items-center px-6 py-3 max-w-7xl mx-auto w-full">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -600,7 +677,7 @@ export default function AdminPage() {
       </header>
 
       {/* Page Header Area */}
-      <div className="border-b bg-card/30">
+      <div className="border-b border-border/40 bg-card/20 backdrop-blur-sm">
         <div className="px-6 py-6 max-w-7xl mx-auto w-full">
           <h1 className="text-xl font-semibold tracking-tight">Admin Dashboard</h1>
           <p className="text-muted-foreground mt-1 text-sm">จัดการระบบผู้ใช้งาน บัญชีธนาคาร และตรวจสอบสลิปการโอนเงิน</p>
@@ -611,20 +688,20 @@ export default function AdminPage() {
       <main className="flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-8">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <TabsList className="bg-muted/50 p-1 border rounded-lg inline-flex max-w-fit w-full sm:w-auto h-auto flex-wrap">
-              <TabsTrigger value="payments" className="rounded-md px-4 py-2 text-sm font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
+            <TabsList className="bg-card/40 backdrop-blur-md p-1 border border-border/60 rounded-xl inline-flex max-w-fit w-full sm:w-auto h-auto flex-wrap shadow-lg shadow-black/10">
+              <TabsTrigger value="payments" className="rounded-lg px-4 py-2 text-sm font-medium data-[state=active]:bg-gradient-to-br data-[state=active]:from-amber-400 data-[state=active]:to-amber-500 data-[state=active]:text-amber-950 data-[state=active]:shadow-md data-[state=active]:shadow-amber-500/30 transition-all">
                 รายการตรวจสลิป ({payments.filter(p => p.status === 'PENDING').length})
               </TabsTrigger>
-              <TabsTrigger value="transactions" className="rounded-md px-4 py-2 text-sm font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
+              <TabsTrigger value="transactions" className="rounded-lg px-4 py-2 text-sm font-medium data-[state=active]:bg-gradient-to-br data-[state=active]:from-amber-400 data-[state=active]:to-amber-500 data-[state=active]:text-amber-950 data-[state=active]:shadow-md data-[state=active]:shadow-amber-500/30 transition-all">
                 ธุรกรรมทั้งหมด ({payments.length})
               </TabsTrigger>
-              <TabsTrigger value="users" className="rounded-md px-4 py-2 text-sm font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
+              <TabsTrigger value="users" className="rounded-lg px-4 py-2 text-sm font-medium data-[state=active]:bg-gradient-to-br data-[state=active]:from-amber-400 data-[state=active]:to-amber-500 data-[state=active]:text-amber-950 data-[state=active]:shadow-md data-[state=active]:shadow-amber-500/30 transition-all">
                 จัดการผู้ใช้งาน
               </TabsTrigger>
-              <TabsTrigger value="accounts" className="rounded-md px-4 py-2 text-sm font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
+              <TabsTrigger value="accounts" className="rounded-lg px-4 py-2 text-sm font-medium data-[state=active]:bg-gradient-to-br data-[state=active]:from-amber-400 data-[state=active]:to-amber-500 data-[state=active]:text-amber-950 data-[state=active]:shadow-md data-[state=active]:shadow-amber-500/30 transition-all">
                 จัดการบัญชีธนาคาร
               </TabsTrigger>
-              <TabsTrigger value="apimanage" className="rounded-md px-4 py-2 text-sm font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">
+              <TabsTrigger value="apimanage" className="rounded-lg px-4 py-2 text-sm font-medium data-[state=active]:bg-gradient-to-br data-[state=active]:from-amber-400 data-[state=active]:to-amber-500 data-[state=active]:text-amber-950 data-[state=active]:shadow-md data-[state=active]:shadow-amber-500/30 transition-all">
                 จัดการ API
               </TabsTrigger>
             </TabsList>
@@ -632,7 +709,7 @@ export default function AdminPage() {
 
           {/* Tab 1: Payments Slip Verification */}
           <TabsContent value="payments">
-            <Card className="shadow-sm">
+            <Card className="glass-card surface-highlight">
               <CardHeader>
                 <CardTitle className="text-xl flex items-center gap-2">
                   <FolderOpen className="h-5 w-5 text-primary" />
@@ -770,7 +847,7 @@ export default function AdminPage() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
               
               {/* Create User Form */}
-              <Card className="lg:col-span-5 shadow-sm">
+              <Card className="lg:col-span-5 glass-card surface-highlight">
                 <CardHeader>
                   <CardTitle className="text-lg flex items-center gap-2">
                     <UserPlus className="h-5 w-5 text-primary" />
@@ -953,7 +1030,7 @@ export default function AdminPage() {
                   return (
                     <>
                       {/* Header: title + summary + search */}
-                      <Card className="shadow-sm">
+                      <Card className="glass-card surface-highlight">
                         <CardHeader className="pb-3">
                           <CardTitle className="text-lg flex items-center gap-2">
                             <Users className="h-5 w-5 text-primary" />
@@ -1066,7 +1143,7 @@ export default function AdminPage() {
                         if (q && visibleUnassigned.length === 0 && unassigned.length === 0) return null;
                         const collapsed = collapsedAccounts.has('UNASSIGNED');
                         return (
-                          <Card className={`shadow-sm overflow-hidden ${unassigned.length > 0 ? 'border-destructive/40' : ''}`}>
+                          <Card className={`glass-card surface-highlight overflow-hidden ${unassigned.length > 0 ? 'border-destructive/40' : ''}`}>
                             <button
                               type="button"
                               onClick={() => toggleCollapsed('UNASSIGNED')}
@@ -1110,7 +1187,7 @@ export default function AdminPage() {
                       })()}
 
                       {allUsers.length === 0 && (
-                        <Card className="shadow-sm">
+                        <Card className="glass-card surface-highlight">
                           <CardContent className="text-center text-muted-foreground py-12 text-sm">
                             ยังไม่มีผู้ใช้งานในระบบ — สร้างผู้ใช้คนแรกจากฟอร์มด้านซ้าย
                           </CardContent>
@@ -1129,7 +1206,7 @@ export default function AdminPage() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
               
               {/* Create Account Form */}
-              <Card className="lg:col-span-5 shadow-sm">
+              <Card className="lg:col-span-5 glass-card surface-highlight">
                 <CardHeader>
                   <CardTitle className="text-lg flex items-center gap-2">
                     <PlusCircle className="h-5 w-5 text-primary" />
@@ -1217,7 +1294,7 @@ export default function AdminPage() {
               </Card>
 
               {/* List Bank Accounts */}
-              <Card className="lg:col-span-7 shadow-sm min-h-[500px]">
+              <Card className="lg:col-span-7 glass-card surface-highlight min-h-[500px]">
                 <CardHeader>
                   <CardTitle className="text-lg flex items-center gap-2">
                     <CreditCard className="h-5 w-5 text-primary" />
@@ -1367,7 +1444,7 @@ export default function AdminPage() {
               return (
                 <div className="space-y-6">
                   {/* View mode toggle + Master summary */}
-                  <Card className="shadow-sm">
+                  <Card className="glass-card surface-highlight">
                     <CardContent className="pt-6">
                       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                         <div>
@@ -1439,7 +1516,7 @@ export default function AdminPage() {
                   {txViewMode === 'per-account' && (
                     <>
                       {accountStats.length === 0 ? (
-                        <Card className="shadow-sm">
+                        <Card className="glass-card surface-highlight">
                           <CardContent className="text-center py-16 text-muted-foreground">
                             <CreditCard className="h-8 w-8 mx-auto mb-3 opacity-30" />
                             <p className="text-sm">ยังไม่มีบัญชีรับเงินในระบบ</p>
@@ -1497,6 +1574,26 @@ export default function AdminPage() {
                                     </div>
                                   </div>
 
+                                  {/* Remark / Note (admin-only) */}
+                                  {acc.remark ? (
+                                    <div className="rounded-md border border-border/50 bg-muted/40 px-2.5 py-2 text-[11px] text-foreground/90 leading-relaxed">
+                                      <div className="flex items-start gap-1.5">
+                                        <StickyNote className="h-3.5 w-3.5 mt-0.5 text-amber-500 shrink-0" />
+                                        <div className="min-w-0 flex-1 break-words whitespace-pre-wrap">
+                                          {renderRemarkWithLinks(acc.remark)}
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => startEditingRemark(acc)}
+                                          className="shrink-0 text-[10px] text-muted-foreground hover:text-primary underline-offset-2 hover:underline"
+                                          title="แก้ไข Remark"
+                                        >
+                                          แก้ไข
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : null}
+
                                   {/* Progress bar */}
                                   <div className="space-y-1">
                                     <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
@@ -1534,22 +1631,33 @@ export default function AdminPage() {
                                         <span className="ml-2 text-amber-500">+{monthPendingAmount.toLocaleString('th-TH', { maximumFractionDigits: 0 })} รออนุมัติ</span>
                                       )}
                                     </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setTxFilterAccount(acc.accountNumber);
-                                        setTxFilterStatus('ALL');
-                                        setTxFilterUser('ALL');
-                                        setTxFilterDateFrom('');
-                                        setTxFilterDateTo('');
-                                        setTxSearch('');
-                                        setTxViewMode('flat');
-                                      }}
-                                      className="text-primary hover:underline font-semibold flex items-center gap-1"
-                                    >
-                                      ดูรายละเอียด
-                                      <ChevronDown className="h-3 w-3 -rotate-90" />
-                                    </button>
+                                    <div className="flex items-center gap-3">
+                                      <button
+                                        type="button"
+                                        onClick={() => startEditingRemark(acc)}
+                                        className="text-muted-foreground hover:text-primary font-medium flex items-center gap-1"
+                                        title={acc.remark ? 'แก้ไข Remark' : 'เพิ่ม Remark'}
+                                      >
+                                        <StickyNote className="h-3 w-3" />
+                                        {acc.remark ? 'Remark' : '+ Remark'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setTxFilterAccount(acc.accountNumber);
+                                          setTxFilterStatus('ALL');
+                                          setTxFilterUser('ALL');
+                                          setTxFilterDateFrom('');
+                                          setTxFilterDateTo('');
+                                          setTxSearch('');
+                                          setTxViewMode('flat');
+                                        }}
+                                        className="text-primary hover:underline font-semibold flex items-center gap-1"
+                                      >
+                                        ดูรายละเอียด
+                                        <ChevronDown className="h-3 w-3 -rotate-90" />
+                                      </button>
+                                    </div>
                                   </div>
                                 </CardContent>
                               </Card>
@@ -1565,7 +1673,7 @@ export default function AdminPage() {
                     <>
 
                   {/* Filters */}
-                  <Card className="shadow-sm">
+                  <Card className="glass-card surface-highlight">
                     <CardHeader className="pb-3">
                       <CardTitle className="text-base flex items-center gap-2">
                         <SlidersHorizontal className="h-4 w-4 text-primary" />
@@ -1656,7 +1764,7 @@ export default function AdminPage() {
                   </Card>
 
                   {/* Transaction Table */}
-                  <Card className="shadow-sm">
+                  <Card className="glass-card surface-highlight">
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between">
                         <CardTitle className="text-base flex items-center gap-2">
@@ -1741,7 +1849,7 @@ export default function AdminPage() {
 
                   {/* Per-user summary */}
                   {txFilterUser === 'ALL' && (
-                    <Card className="shadow-sm">
+                    <Card className="glass-card surface-highlight">
                       <CardHeader className="pb-3">
                         <CardTitle className="text-base flex items-center gap-2">
                           <TrendingUp className="h-4 w-4 text-primary" />
@@ -1864,7 +1972,7 @@ export default function AdminPage() {
                   </div>
 
                   {/* Token Management Card */}
-                  <Card className="shadow-sm border-primary/20">
+                  <Card className="glass-card surface-highlight border-amber-500/30">
                     <CardHeader className="pb-3">
                       <CardTitle className="text-base flex items-center gap-2">
                         <Zap className="h-4 w-4 text-primary" />
@@ -1972,7 +2080,7 @@ export default function AdminPage() {
                   </Card>
 
                   {/* Endpoint 1: Summary */}
-                  <Card className="shadow-sm">
+                  <Card className="glass-card surface-highlight">
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
@@ -2002,7 +2110,7 @@ export default function AdminPage() {
                   </Card>
 
                   {/* Endpoint 2: Per-account (dynamic) */}
-                  <Card className="shadow-sm">
+                  <Card className="glass-card surface-highlight">
                     <CardHeader className="pb-3">
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded px-1.5 py-0.5">GET</span>
@@ -2123,7 +2231,7 @@ export default function AdminPage() {
                   </Card>
 
                   {/* Response structure */}
-                  <Card className="shadow-sm">
+                  <Card className="glass-card surface-highlight">
                     <CardHeader className="pb-3">
                       <CardTitle className="text-sm flex items-center gap-2">
                         <Code2 className="h-4 w-4 text-primary" />
@@ -2355,7 +2463,7 @@ export default function AdminPage() {
                 <Button 
                   type="submit" 
                   disabled={editSubmitting}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+                  className="btn-premium rounded-xl px-5"
                 >
                   {editSubmitting ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}
                 </Button>
@@ -2449,10 +2557,90 @@ export default function AdminPage() {
                 <Button 
                   type="submit" 
                   disabled={editAccountSubmitting}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+                  className="btn-premium rounded-xl px-5"
                 >
                   {editAccountSubmitting ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}
                 </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Remark Modal */}
+      {remarkAccount && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-card border rounded-lg w-full max-w-md p-6 shadow-lg relative animate-in fade-in zoom-in-95 duration-200">
+            <button
+              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground text-xl"
+              onClick={() => { setRemarkAccount(null); setRemarkText(''); setRemarkError(''); }}
+              disabled={remarkSubmitting}
+            >×</button>
+            <h3 className="text-lg font-bold mb-1 flex items-center gap-1.5">
+              <StickyNote className="h-5 w-5 text-amber-500" />
+              Remark
+            </h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              {remarkAccount.bankName} – {remarkAccount.accountNumber}
+              <span className="block mt-1 opacity-80">
+                บันทึกลิงก์/โน้ตว่าบัญชีนี้เชื่อมไปเว็บไหน (เห็นเฉพาะแอดมิน)
+              </span>
+            </p>
+
+            {remarkError && (
+              <div className="bg-destructive/10 border border-destructive/20 text-destructive p-3 rounded-lg text-xs font-semibold text-center mb-4">
+                {remarkError}
+              </div>
+            )}
+
+            <form onSubmit={handleRemarkSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="remark-text">โน้ต / ลิงก์</Label>
+                <textarea
+                  id="remark-text"
+                  value={remarkText}
+                  onChange={(e) => setRemarkText(e.target.value)}
+                  disabled={remarkSubmitting}
+                  rows={5}
+                  maxLength={2000}
+                  placeholder="เช่น https://example.com — เชื่อมเว็บ A&#10;หรือใส่ข้อความบรรยายได้"
+                  className="flex min-h-[120px] w-full rounded-md border border-input bg-background/50 px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-y"
+                />
+                <div className="flex justify-between text-[10px] text-muted-foreground">
+                  <span>ลิงก์ http(s) จะแสดงเป็นปุ่มกดได้อัตโนมัติบนการ์ด</span>
+                  <span>{remarkText.length}/2000</span>
+                </div>
+              </div>
+
+              <div className="flex gap-2 justify-between pt-2">
+                {remarkAccount.remark ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setRemarkText('')}
+                    disabled={remarkSubmitting}
+                    className="text-destructive border-destructive/30 hover:bg-destructive/10"
+                  >
+                    ล้างค่า
+                  </Button>
+                ) : <span />}
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => { setRemarkAccount(null); setRemarkText(''); setRemarkError(''); }}
+                    disabled={remarkSubmitting}
+                  >
+                    ยกเลิก
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={remarkSubmitting}
+                    className="btn-premium rounded-xl px-5"
+                  >
+                    {remarkSubmitting ? 'กำลังบันทึก...' : 'บันทึก Remark'}
+                  </Button>
+                </div>
               </div>
             </form>
           </div>
