@@ -155,22 +155,29 @@ export async function GET(request, { params }) {
       },
 
       // Transaction list
-      transactions: transactions.map((p) => ({
-        id:             p.id,
-        referenceNumber: crypto.randomUUID(),
-        amount:         p.amount,
-        status:         p.status,
-        rejectedReason: p.rejectedReason || null,
-        slipUrl:        p.slipUrl,
-        createdAt:      p.createdAt,
-        updatedAt:      p.updatedAt,
-        user: {
-          id:       p.user.id,
-          username: p.user.username,
-          name:     p.user.name,
-          phone:    p.user.phone || null,
-        },
-      })),
+      transactions: transactions.map((p) => {
+        const d = p.createdAt;
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const randNumber = Math.floor(100000 + Math.random() * 900000); // 6-digit random number
+        
+        return {
+          id:             p.id,
+          referenceNumber: `${yyyy}-${mm}-${randNumber}`,
+          amount:         p.amount,
+          status:         p.status,
+          rejectedReason: p.rejectedReason || null,
+          slipUrl:        p.slipUrl,
+          createdAt:      p.createdAt,
+          updatedAt:      p.updatedAt,
+          user: {
+            id:       p.user.id,
+            username: p.user.username,
+            name:     p.user.name,
+            phone:    p.user.phone || null,
+          },
+        };
+      }),
     });
   } catch (error) {
     console.error('Dashboard [accountId] GET error:', error);
