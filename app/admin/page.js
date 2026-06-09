@@ -871,7 +871,7 @@ export default function AdminPage() {
 
                   <form onSubmit={handleCreateUser} className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="new-username">ชื่อผู้ใช้ (Username)</Label>
+                      <Label htmlFor="new-username">เบอร์โทรศัพท์ (Phone)</Label>
                       <Input
                         id="new-username"
                         value={username}
@@ -2368,7 +2368,7 @@ export default function AdminPage() {
 
             <form onSubmit={handleEditUserSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="edit-username">ชื่อผู้ใช้ (Username)</Label>
+                <Label htmlFor="edit-username">เบอร์โทรศัพท์ (Phone)</Label>
                 <Input
                   id="edit-username"
                   value={editUsername}
