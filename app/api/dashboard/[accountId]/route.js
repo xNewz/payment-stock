@@ -122,7 +122,6 @@ export async function GET(request, { params }) {
 
     return NextResponse.json({
       generatedAt: new Date().toISOString(),
-      referenceNumber: crypto.randomUUID(),
 
       // Account info
       account: {
@@ -158,6 +157,7 @@ export async function GET(request, { params }) {
       // Transaction list
       transactions: transactions.map((p) => ({
         id:             p.id,
+        referenceNumber: crypto.randomUUID(),
         amount:         p.amount,
         status:         p.status,
         rejectedReason: p.rejectedReason || null,
